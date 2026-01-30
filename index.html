@@ -36,6 +36,27 @@
       transform: scale(1.15);
     }
     
+    input[type="number"], input[type="text"] {
+      background: rgba(20,40,70,0.8);
+      border: 1px solid rgba(100,150,200,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #e0f0ff;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 15px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    input[type="number"]:focus, input[type="text"]:focus {
+      border-color: #60b0e0;
+    }
+    
+    input[type="number"]::-webkit-inner-spin-button {
+      opacity: 0.5;
+    }
+    
     .scenario-row {
       transition: all 0.2s ease;
       cursor: pointer;
@@ -64,16 +85,28 @@
       63: 23.0, 64: 24.0, 65: 25.0, 66: 25.0, 67: 25.0, 68: 25.0, 69: 25.0, 70: 25.0
     };
 
+    const CURRENT_YEAR = 2026;
+    const CONTRIBUTION_RATE = 0.11;
+    const REDUCED_INTEREST_RATE = 0.0345;
+    const FULL_INTEREST_RATE = 0.069;
+
     function App() {
       const [inputs, setInputs] = useState({
         currentAge: 45,
         brsJoinDate: 'post-2012',
-        currentServiceYears: 2,
-        edicYearsToBuyBack: 5,
-        currentSalary: 95000,
+        currentCityServiceYears: 1.5,
+        expectedFinalSalary: 120000,
         salaryGrowthRate: 2.5,
         lifeExpectancy: 85
       });
+      
+      const [edicYears, setEdicYears] = useState([
+        { year: 2020, salary: 85000 },
+        { year: 2021, salary: 90000 },
+        { year: 2022, salary: 95000 },
+        { year: 2023, salary: 100000 },
+        { year: 2024, salary: 105000 },
+      ]);
       
       const [showAdvanced, setShowAdvanced] = useState(false);
       const [selectedScenario, setSelectedScenario] = useState(null);
@@ -82,25 +115,75 @@
         setInputs(prev => ({ ...prev, [field]: value }));
       };
 
+      const addEdicYear = () => {
+        const lastYear = edicYears.length > 0 ? edicYears[edicYears.length - 1] : { year: 2023, salary: 80000 };
+        setEdicYears([...edicYears, { year: lastYear.year + 1, salary: Math.round(lastYear.salary * 1.03) }]);
+      };
+
+      const removeEdicYear = (index) => {
+        setEdicYears(edicYears.filter((_, i) => i !== index));
+      };
+
+      const updateEdicYear = (index, field, value) => {
+        const updated = [...edicYears];
+        updated[index][field] = field === 'year' ? parseInt(value) || 0 : parseFloat(value) || 0;
+        setEdicYears(updated);
+      };
+
+      const buybackCalculation = useMemo(() => {
+        let totalReducedRate = 0;
+        let totalFullRate = 0;
+        const breakdown = [];
+
+        edicYears.forEach(({ year, salary }) => {
+          const contribution = salary * CONTRIBUTION_RATE;
+          const yearsOfInterest = CURRENT_YEAR - year;
+          
+          const amountReduced = contribution * Math.pow(1 + REDUCED_INTEREST_RATE, yearsOfInterest);
+          const amountFull = contribution * Math.pow(1 + FULL_INTEREST_RATE, yearsOfInterest);
+          
+          totalReducedRate += amountReduced;
+          totalFullRate += amountFull;
+          
+          breakdown.push({
+            year,
+            salary,
+            contribution,
+            yearsOfInterest,
+            amountReduced,
+            amountFull
+          });
+        });
+
+        return {
+          totalReducedRate,
+          totalFullRate,
+          breakdown,
+          totalYears: edicYears.length,
+          savings: totalFullRate - totalReducedRate
+        };
+      }, [edicYears]);
+
       const calculations = useMemo(() => {
         const {
-          currentAge, brsJoinDate, currentServiceYears, edicYearsToBuyBack,
-          currentSalary, salaryGrowthRate, lifeExpectancy
+          currentAge, brsJoinDate, currentCityServiceYears,
+          expectedFinalSalary, salaryGrowthRate, lifeExpectancy
         } = inputs;
 
+        const edicServiceYears = edicYears.length;
         const table = brsJoinDate === 'post-2012' ? GROUP1_TABLE_POST_2012 : GROUP1_TABLE_PRE_2012;
         const minRetirementAge = brsJoinDate === 'post-2012' ? 60 : 55;
         const avgYears = brsJoinDate === 'post-2012' ? 5 : 3;
         const MAX_BENEFIT_PERCENT = 80;
 
         const projectSalary = (yearsFromNow) => {
-          return currentSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
+          return expectedFinalSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
         };
 
         const getHighestAvgSalary = (retirementAge) => {
           const yearsUntilRetirement = retirementAge - currentAge;
           const salaries = [];
-          for (let i = 0; i <= yearsUntilRetirement; i++) {
+          for (let i = Math.max(0, yearsUntilRetirement - 10); i <= yearsUntilRetirement; i++) {
             salaries.push(projectSalary(i));
           }
           salaries.sort((a, b) => b - a);
@@ -114,22 +197,12 @@
           return Math.min(rawPercent, MAX_BENEFIT_PERCENT);
         };
 
-        const estimateBuybackCost = (years, reducedRate = true) => {
-          const avgHistoricalSalary = currentSalary * 0.85;
-          const contributionRate = 0.11;
-          const principal = avgHistoricalSalary * contributionRate * years;
-          const interestRate = reducedRate ? 0.0345 : 0.069;
-          const yearsOfInterest = 3;
-          const totalCost = principal * Math.pow(1 + interestRate, yearsOfInterest);
-          return { principal, totalCost, interestRate };
-        };
-
         const scenarios = [];
         
         for (let retireAge = Math.max(minRetirementAge, currentAge + 1); retireAge <= 70; retireAge++) {
           const yearsUntilRetirement = retireAge - currentAge;
-          const serviceAtRetirement = currentServiceYears + yearsUntilRetirement;
-          const serviceWithBuyback = serviceAtRetirement + edicYearsToBuyBack;
+          const serviceAtRetirement = currentCityServiceYears + yearsUntilRetirement;
+          const serviceWithBuyback = serviceAtRetirement + edicServiceYears;
           const avgSalary = getHighestAvgSalary(retireAge);
 
           const percentWithout = getBenefitPercent(retireAge, serviceAtRetirement);
@@ -144,12 +217,12 @@
           const lifetimeBenefitWith = annualPensionWith * yearsCollecting;
           const lifetimeGain = lifetimeBenefitWith - lifetimeBenefitWithout;
 
-          const buybackCost = estimateBuybackCost(edicYearsToBuyBack, true);
-          const buybackCostFull = estimateBuybackCost(edicYearsToBuyBack, false);
+          const buybackCost = buybackCalculation.totalReducedRate;
+          const buybackCostFull = buybackCalculation.totalFullRate;
           
-          const netLifetimeGain = lifetimeGain - buybackCost.totalCost;
-          const roi = buybackCost.totalCost > 0 ? (netLifetimeGain / buybackCost.totalCost) * 100 : 0;
-          const paybackYears = annualBenefit > 0 ? buybackCost.totalCost / annualBenefit : Infinity;
+          const netLifetimeGain = lifetimeGain - buybackCost;
+          const roi = buybackCost > 0 ? (netLifetimeGain / buybackCost) * 100 : 0;
+          const paybackYears = annualBenefit > 0 ? buybackCost / annualBenefit : Infinity;
 
           const hitsMaxWithout = percentWithout >= MAX_BENEFIT_PERCENT;
           const hitsMaxWith = percentWith >= MAX_BENEFIT_PERCENT;
@@ -169,9 +242,8 @@
             lifetimeBenefitWithout,
             lifetimeBenefitWith,
             lifetimeGain,
-            buybackCost: buybackCost.totalCost,
-            buybackCostFull: buybackCostFull.totalCost,
-            buybackPrincipal: buybackCost.principal,
+            buybackCost,
+            buybackCostFull,
             netLifetimeGain,
             roi,
             paybackYears,
@@ -199,14 +271,19 @@
           optimalWithoutBuyback,
           bestBuybackROI,
           minRetirementAge,
-          avgYears
+          avgYears,
+          edicServiceYears
         };
-      }, [inputs]);
+      }, [inputs, edicYears, buybackCalculation]);
 
       const formatCurrency = (num) => {
         if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
         if (num >= 1000) return `$${(num / 1000).toFixed(0)}K`;
         return `$${num.toFixed(0)}`;
+      };
+
+      const formatCurrencyFull = (num) => {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
       };
 
       const formatPercent = (num) => `${num.toFixed(1)}%`;
@@ -272,6 +349,27 @@
           background: 'linear-gradient(135deg, #2a6090, #3a80b0)',
           borderColor: '#60b0e0',
           color: 'white'
+        },
+        addBtn: {
+          background: 'linear-gradient(135deg, #2e7d32, #4caf50)',
+          border: 'none',
+          color: 'white',
+          padding: '10px 20px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: '14px',
+          fontWeight: '500'
+        },
+        removeBtn: {
+          background: 'rgba(200,60,60,0.3)',
+          border: '1px solid rgba(200,100,100,0.3)',
+          color: '#f0a0a0',
+          padding: '6px 12px',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: '13px'
         }
       };
 
@@ -308,7 +406,7 @@
               </p>
             </header>
 
-            {/* Input Section */}
+            {/* EDIC Service History Section */}
             <div style={{ ...styles.card, padding: '28px', marginBottom: '24px' }}>
               <h2 style={{ 
                 fontSize: '18px', 
@@ -329,6 +427,132 @@
                   justifyContent: 'center',
                   fontSize: '14px'
                 }}>1</span>
+                EDIC Service History (for Buyback)
+              </h2>
+              
+              <p style={{ color: '#90b8d8', fontSize: '14px', marginBottom: '20px' }}>
+                Enter each year you worked at EDIC and your salary for that year. This calculates your buyback cost.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                {edicYears.map((item, index) => (
+                  <div key={index} style={{ 
+                    display: 'flex', 
+                    gap: '12px', 
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    background: 'rgba(20,40,70,0.5)',
+                    borderRadius: '10px'
+                  }}>
+                    <div style={{ flex: '0 0 100px' }}>
+                      <label style={{ display: 'block', marginBottom: '4px', color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase' }}>Year</label>
+                      <input
+                        type="number"
+                        value={item.year}
+                        onChange={(e) => updateEdicYear(index, 'year', e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ flex: '1' }}>
+                      <label style={{ display: 'block', marginBottom: '4px', color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase' }}>Annual Salary</label>
+                      <input
+                        type="number"
+                        value={item.salary}
+                        onChange={(e) => updateEdicYear(index, 'salary', e.target.value)}
+                        placeholder="e.g. 95000"
+                      />
+                    </div>
+                    <div style={{ flex: '0 0 auto', paddingTop: '20px' }}>
+                      <button style={styles.removeBtn} onClick={() => removeEdicYear(index)}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button style={styles.addBtn} onClick={addEdicYear}>+ Add Year</button>
+
+              {/* Buyback Cost Summary */}
+              {edicYears.length > 0 && (
+                <div style={{ 
+                  marginTop: '24px', 
+                  padding: '20px', 
+                  background: 'rgba(40,80,120,0.4)', 
+                  borderRadius: '12px',
+                  border: '1px solid rgba(100,180,240,0.3)'
+                }}>
+                  <h3 style={{ margin: '0 0 16px 0', color: '#c0daf0', fontSize: '16px' }}>Buyback Cost Calculation</h3>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                    <div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years of Service</div>
+                      <div style={{ ...styles.statValue, fontSize: '28px', color: '#e0f0ff' }}>{buybackCalculation.totalYears}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 3.45% (Reduced)</div>
+                      <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.totalReducedRate)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 6.9% (Full Rate)</div>
+                      <div style={{ ...styles.statValue, fontSize: '28px', color: '#f0a060' }}>{formatCurrencyFull(buybackCalculation.totalFullRate)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Savings with Reduced Rate</div>
+                      <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.savings)}</div>
+                    </div>
+                  </div>
+
+                  <details style={{ marginTop: '20px' }}>
+                    <summary style={{ color: '#90b8d8', cursor: 'pointer', fontSize: '14px' }}>View year-by-year breakdown</summary>
+                    <table style={{ width: '100%', marginTop: '12px', fontSize: '13px', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(100,150,200,0.3)' }}>
+                          <th style={{ padding: '8px', textAlign: 'left', color: '#80a8c8' }}>Year</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Salary</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>11% Contribution</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Years Interest</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 3.45%</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 6.9%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {buybackCalculation.breakdown.map((row, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid rgba(100,150,200,0.1)' }}>
+                            <td style={{ padding: '8px' }}>{row.year}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue }}>{formatCurrencyFull(row.salary)}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue }}>{formatCurrencyFull(row.contribution)}</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>{row.yearsOfInterest}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue, color: '#60d080' }}>{formatCurrencyFull(row.amountReduced)}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue, color: '#f0a060' }}>{formatCurrencyFull(row.amountFull)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                </div>
+              )}
+            </div>
+
+            {/* Personal Info Section */}
+            <div style={{ ...styles.card, padding: '28px', marginBottom: '24px' }}>
+              <h2 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                margin: '0 0 24px 0',
+                color: '#c0daf0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <span style={{ 
+                  width: '28px', 
+                  height: '28px', 
+                  background: 'linear-gradient(135deg, #3080b0, #60b0e0)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px'
+                }}>2</span>
                 Your Information
               </h2>
 
@@ -384,10 +608,10 @@
                   </div>
                 </div>
 
-                {/* Current Service Years */}
+                {/* Current City Service Years */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Current City Service (Years)
+                    Current City Service (Years in BRS)
                   </label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <input
@@ -395,38 +619,17 @@
                       min="0"
                       max="30"
                       step="0.5"
-                      value={inputs.currentServiceYears}
-                      onChange={(e) => handleInputChange('currentServiceYears', parseFloat(e.target.value))}
+                      value={inputs.currentCityServiceYears}
+                      onChange={(e) => handleInputChange('currentCityServiceYears', parseFloat(e.target.value))}
                       style={{ flex: 1 }}
                     />
                     <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.currentServiceYears}
+                      {inputs.currentCityServiceYears}
                     </span>
                   </div>
                 </div>
 
-                {/* EDIC Years to Buy Back */}
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    EDIC Years to Buy Back
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="0"
-                      max="20"
-                      step="0.5"
-                      value={inputs.edicYearsToBuyBack}
-                      onChange={(e) => handleInputChange('edicYearsToBuyBack', parseFloat(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.edicYearsToBuyBack}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Current Salary */}
+                {/* Expected Final Salary */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
                     Current Annual Salary
@@ -435,14 +638,14 @@
                     <input
                       type="range"
                       min="40000"
-                      max="200000"
+                      max="250000"
                       step="1000"
-                      value={inputs.currentSalary}
-                      onChange={(e) => handleInputChange('currentSalary', parseInt(e.target.value))}
+                      value={inputs.expectedFinalSalary}
+                      onChange={(e) => handleInputChange('expectedFinalSalary', parseInt(e.target.value))}
                       style={{ flex: 1 }}
                     />
                     <span style={{ ...styles.statValue, minWidth: '80px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {formatCurrency(inputs.currentSalary)}
+                      {formatCurrency(inputs.expectedFinalSalary)}
                     </span>
                   </div>
                 </div>
@@ -467,37 +670,26 @@
                     </span>
                   </div>
                 </div>
-              </div>
 
-              {/* Advanced Settings */}
-              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
-                <button
-                  style={styles.toggleBtn}
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                >
-                  {showAdvanced ? '▼' : '▶'} Advanced Settings
-                </button>
-                
-                {showAdvanced && (
-                  <div style={{ marginTop: '16px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                      Life Expectancy (for lifetime benefit calculation)
-                    </label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', maxWidth: '350px' }}>
-                      <input
-                        type="range"
-                        min="70"
-                        max="100"
-                        value={inputs.lifeExpectancy}
-                        onChange={(e) => handleInputChange('lifeExpectancy', parseInt(e.target.value))}
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                        {inputs.lifeExpectancy}
-                      </span>
-                    </div>
+                {/* Life Expectancy */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
+                    Life Expectancy (for lifetime calculations)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <input
+                      type="range"
+                      min="70"
+                      max="100"
+                      value={inputs.lifeExpectancy}
+                      onChange={(e) => handleInputChange('lifeExpectancy', parseInt(e.target.value))}
+                      style={{ flex: 1 }}
+                    />
+                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
+                      {inputs.lifeExpectancy}
+                    </span>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
@@ -547,7 +739,7 @@
               )}
 
               {/* Buyback ROI */}
-              {calculations.bestBuybackROI && inputs.edicYearsToBuyBack > 0 && (
+              {calculations.bestBuybackROI && edicYears.length > 0 && (
                 <div style={{ ...styles.card, padding: '24px' }}>
                   <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px' }}>
                     Buyback Investment
@@ -637,7 +829,7 @@
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '14px'
-                }}>2</span>
+                }}>3</span>
                 All Retirement Scenarios
               </h2>
 
@@ -746,11 +938,11 @@
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#f0c060' }}>{formatCurrency(s.buybackCost)}</div>
+                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrencyFull(s.buybackCost)}</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (6.9% full)</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#d09050' }}>{formatCurrency(s.buybackCostFull)}</div>
+                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#f0a060' }}>{formatCurrencyFull(s.buybackCostFull)}</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Benefit from Buyback</div>
@@ -801,7 +993,7 @@
             }}>
               <p style={{ margin: '0 0 8px 0' }}>
                 This tool provides estimates based on the Boston Retirement System Group 1 formulas. 
-                Actual benefits may vary.
+                Actual benefits may vary. Reduced rate (3.45%) applies if you submit by November 25, 2026.
               </p>
               <p style={{ margin: 0 }}>
                 Consult with the Boston Retirement System at <strong style={{ color: '#80a8c8' }}>retirementboard@boston.gov</strong> for official calculations.
