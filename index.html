@@ -29,14 +29,9 @@
       background: linear-gradient(135deg, #60b0e0, #3090c0);
       cursor: pointer;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      transition: transform 0.15s ease;
     }
     
-    input[type="range"]::-webkit-slider-thumb:hover {
-      transform: scale(1.15);
-    }
-    
-    input[type="number"], input[type="text"] {
+    input[type="number"] {
       background: rgba(20,40,70,0.8);
       border: 1px solid rgba(100,150,200,0.3);
       border-radius: 8px;
@@ -46,24 +41,51 @@
       font-size: 15px;
       width: 100%;
       outline: none;
-      transition: border-color 0.2s;
     }
     
-    input[type="number"]:focus, input[type="text"]:focus {
+    input[type="number"]:focus {
       border-color: #60b0e0;
     }
-    
-    input[type="number"]::-webkit-inner-spin-button {
-      opacity: 0.5;
-    }
-    
-    .scenario-row {
-      transition: all 0.2s ease;
-      cursor: pointer;
+
+    input[type="number"].compact {
+      padding: 8px 10px;
+      font-size: 14px;
     }
     
     .scenario-row:hover {
       background: rgba(60,120,180,0.15);
+    }
+
+    .entry-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 40px;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 0;
+    }
+
+    .remove-btn {
+      background: transparent;
+      border: none;
+      color: #a08080;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .remove-btn:hover {
+      background: rgba(200,80,80,0.2);
+      color: #f08080;
+    }
+
+    .empty-row input {
+      border-style: dashed;
+      background: rgba(20,40,70,0.4);
+    }
+
+    .empty-row input::placeholder {
+      color: #506880;
     }
   </style>
 </head>
@@ -71,7 +93,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useMemo } = React;
+    const { useState, useMemo, useRef } = React;
 
     const GROUP1_TABLE_POST_2012 = {
       60: 1.45, 61: 1.6, 62: 1.75, 63: 1.9, 64: 2.05, 65: 2.2, 66: 2.35, 67: 2.5,
@@ -100,24 +122,53 @@
         lifeExpectancy: 85
       });
       
-      const [edicYears, setEdicYears] = useState([
-        { year: 2020, salary: 85000 },
-        { year: 2021, salary: 90000 },
-        { year: 2022, salary: 95000 },
-        { year: 2023, salary: 100000 },
-        { year: 2024, salary: 105000 },
-      ]);
+      const [edicYears, setEdicYears] = useState([]);
+      const [entryMode, setEntryMode] = useState('manual');
       
-      const [showAdvanced, setShowAdvanced] = useState(false);
+      const [quickFill, setQuickFill] = useState({
+        startYear: 2020,
+        endYear: 2024,
+        startingSalary: 80000,
+        annualRaise: 3
+      });
+
+      const [newYear, setNewYear] = useState('');
+      const [newSalary, setNewSalary] = useState('');
+      const salaryInputRef = useRef(null);
+      const yearInputRef = useRef(null);
+      
       const [selectedScenario, setSelectedScenario] = useState(null);
 
       const handleInputChange = (field, value) => {
         setInputs(prev => ({ ...prev, [field]: value }));
       };
 
-      const addEdicYear = () => {
-        const lastYear = edicYears.length > 0 ? edicYears[edicYears.length - 1] : { year: 2023, salary: 80000 };
-        setEdicYears([...edicYears, { year: lastYear.year + 1, salary: Math.round(lastYear.salary * 1.03) }]);
+      const addEntry = () => {
+        const year = parseInt(newYear);
+        const salary = parseFloat(newSalary);
+        if (year && salary && year >= 1980 && year <= 2030 && salary > 0) {
+          const updated = [...edicYears, { year, salary }].sort((a, b) => a.year - b.year);
+          setEdicYears(updated);
+          setNewYear('');
+          setNewSalary('');
+          setTimeout(() => yearInputRef.current?.focus(), 50);
+        }
+      };
+
+      const handleYearKeyDown = (e) => {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          if (newYear && salaryInputRef.current) {
+            e.preventDefault();
+            salaryInputRef.current.focus();
+          }
+        }
+      };
+
+      const handleSalaryKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addEntry();
+        }
       };
 
       const removeEdicYear = (index) => {
@@ -127,7 +178,26 @@
       const updateEdicYear = (index, field, value) => {
         const updated = [...edicYears];
         updated[index][field] = field === 'year' ? parseInt(value) || 0 : parseFloat(value) || 0;
+        updated.sort((a, b) => a.year - b.year);
         setEdicYears(updated);
+      };
+
+      const applyQuickFill = () => {
+        const { startYear, endYear, startingSalary, annualRaise } = quickFill;
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) {
+          const yearsFromStart = y - startYear;
+          const salary = Math.round(startingSalary * Math.pow(1 + annualRaise / 100, yearsFromStart));
+          years.push({ year: y, salary });
+        }
+        setEdicYears(years);
+        setEntryMode('manual');
+      };
+
+      const clearAll = () => {
+        setEdicYears([]);
+        setNewYear('');
+        setNewSalary('');
       };
 
       const buybackCalculation = useMemo(() => {
@@ -145,14 +215,7 @@
           totalReducedRate += amountReduced;
           totalFullRate += amountFull;
           
-          breakdown.push({
-            year,
-            salary,
-            contribution,
-            yearsOfInterest,
-            amountReduced,
-            amountFull
-          });
+          breakdown.push({ year, salary, contribution, yearsOfInterest, amountReduced, amountFull });
         });
 
         return {
@@ -165,20 +228,14 @@
       }, [edicYears]);
 
       const calculations = useMemo(() => {
-        const {
-          currentAge, brsJoinDate, currentCityServiceYears,
-          expectedFinalSalary, salaryGrowthRate, lifeExpectancy
-        } = inputs;
-
+        const { currentAge, brsJoinDate, currentCityServiceYears, expectedFinalSalary, salaryGrowthRate, lifeExpectancy } = inputs;
         const edicServiceYears = edicYears.length;
         const table = brsJoinDate === 'post-2012' ? GROUP1_TABLE_POST_2012 : GROUP1_TABLE_PRE_2012;
         const minRetirementAge = brsJoinDate === 'post-2012' ? 60 : 55;
         const avgYears = brsJoinDate === 'post-2012' ? 5 : 3;
         const MAX_BENEFIT_PERCENT = 80;
 
-        const projectSalary = (yearsFromNow) => {
-          return expectedFinalSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
-        };
+        const projectSalary = (yearsFromNow) => expectedFinalSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
 
         const getHighestAvgSalary = (retirementAge) => {
           const yearsUntilRetirement = retirementAge - currentAge;
@@ -187,14 +244,12 @@
             salaries.push(projectSalary(i));
           }
           salaries.sort((a, b) => b - a);
-          const topYears = salaries.slice(0, avgYears);
-          return topYears.reduce((a, b) => a + b, 0) / avgYears;
+          return salaries.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears;
         };
 
         const getBenefitPercent = (age, serviceYears) => {
           const basePercent = table[age] || 0;
-          const rawPercent = basePercent * serviceYears;
-          return Math.min(rawPercent, MAX_BENEFIT_PERCENT);
+          return Math.min(basePercent * serviceYears, MAX_BENEFIT_PERCENT);
         };
 
         const scenarios = [];
@@ -226,53 +281,21 @@
 
           const hitsMaxWithout = percentWithout >= MAX_BENEFIT_PERCENT;
           const hitsMaxWith = percentWith >= MAX_BENEFIT_PERCENT;
-          const buybackWasted = hitsMaxWithout;
 
           scenarios.push({
-            retireAge,
-            yearsUntilRetirement,
-            serviceAtRetirement,
-            serviceWithBuyback,
-            avgSalary,
-            percentWithout,
-            percentWith,
-            annualPensionWithout,
-            annualPensionWith,
-            annualBenefit,
-            lifetimeBenefitWithout,
-            lifetimeBenefitWith,
-            lifetimeGain,
-            buybackCost,
-            buybackCostFull,
-            netLifetimeGain,
-            roi,
-            paybackYears,
-            hitsMaxWithout,
-            hitsMaxWith,
-            buybackWasted,
-            yearsCollecting
+            retireAge, yearsUntilRetirement, serviceAtRetirement, serviceWithBuyback, avgSalary,
+            percentWithout, percentWith, annualPensionWithout, annualPensionWith, annualBenefit,
+            lifetimeBenefitWithout, lifetimeBenefitWith, lifetimeGain, buybackCost, buybackCostFull,
+            netLifetimeGain, roi, paybackYears, hitsMaxWithout, hitsMaxWith, buybackWasted: hitsMaxWithout, yearsCollecting
           });
         }
 
-        const optimalWithBuyback = scenarios
-          .filter(s => !s.buybackWasted)
-          .sort((a, b) => b.lifetimeBenefitWith - a.lifetimeBenefitWith)[0];
-
-        const optimalWithoutBuyback = scenarios
-          .sort((a, b) => b.lifetimeBenefitWithout - a.lifetimeBenefitWithout)[0];
-
-        const bestBuybackROI = scenarios
-          .filter(s => !s.buybackWasted && s.roi > 0)
-          .sort((a, b) => b.roi - a.roi)[0];
-
         return {
           scenarios,
-          optimalWithBuyback,
-          optimalWithoutBuyback,
-          bestBuybackROI,
-          minRetirementAge,
-          avgYears,
-          edicServiceYears
+          optimalWithBuyback: scenarios.filter(s => !s.buybackWasted).sort((a, b) => b.lifetimeBenefitWith - a.lifetimeBenefitWith)[0],
+          optimalWithoutBuyback: scenarios.sort((a, b) => b.lifetimeBenefitWithout - a.lifetimeBenefitWithout)[0],
+          bestBuybackROI: scenarios.filter(s => !s.buybackWasted && s.roi > 0).sort((a, b) => b.roi - a.roi)[0],
+          minRetirementAge, avgYears, edicServiceYears
         };
       }, [inputs, edicYears, buybackCalculation]);
 
@@ -282,95 +305,22 @@
         return `$${num.toFixed(0)}`;
       };
 
-      const formatCurrencyFull = (num) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
-      };
-
+      const formatCurrencyFull = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
       const formatPercent = (num) => `${num.toFixed(1)}%`;
 
       const styles = {
-        container: {
-          minHeight: '100vh',
-          background: 'linear-gradient(135deg, #0a1628 0%, #1a2d4a 50%, #0f1d32 100%)',
-          fontFamily: "'IBM Plex Sans', -apple-system, sans-serif",
-          color: '#e8f0f8',
-          padding: '24px',
-          boxSizing: 'border-box'
-        },
-        card: {
-          background: 'linear-gradient(145deg, rgba(30,50,80,0.8), rgba(20,35,60,0.9))',
-          border: '1px solid rgba(100,150,200,0.2)',
-          borderRadius: '16px',
-          backdropFilter: 'blur(10px)',
-          transition: 'all 0.3s ease'
-        },
-        highlightCard: {
-          background: 'linear-gradient(145deg, rgba(40,80,120,0.9), rgba(30,60,100,0.95))',
-          border: '1px solid rgba(100,180,240,0.4)',
-          borderRadius: '16px'
-        },
-        statValue: {
-          fontFamily: "'IBM Plex Mono', monospace",
-          fontWeight: 500
-        },
-        badge: {
-          display: 'inline-block',
-          padding: '3px 8px',
-          borderRadius: '12px',
-          fontSize: '11px',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px'
-        },
-        badgeOptimal: {
-          background: 'linear-gradient(135deg, #2e7d32, #4caf50)',
-          color: 'white'
-        },
-        badgeWarning: {
-          background: 'linear-gradient(135deg, #e65100, #ff9800)',
-          color: 'white'
-        },
-        badgeMax: {
-          background: 'linear-gradient(135deg, #1565c0, #42a5f5)',
-          color: 'white'
-        },
-        toggleBtn: {
-          background: 'rgba(60,100,150,0.3)',
-          border: '1px solid rgba(100,150,200,0.3)',
-          color: '#a0c4e8',
-          padding: '8px 16px',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          fontFamily: 'inherit',
-          fontSize: '14px'
-        },
-        toggleBtnActive: {
-          background: 'linear-gradient(135deg, #2a6090, #3a80b0)',
-          borderColor: '#60b0e0',
-          color: 'white'
-        },
-        addBtn: {
-          background: 'linear-gradient(135deg, #2e7d32, #4caf50)',
-          border: 'none',
-          color: 'white',
-          padding: '10px 20px',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          fontSize: '14px',
-          fontWeight: '500'
-        },
-        removeBtn: {
-          background: 'rgba(200,60,60,0.3)',
-          border: '1px solid rgba(200,100,100,0.3)',
-          color: '#f0a0a0',
-          padding: '6px 12px',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          fontSize: '13px'
-        }
+        container: { minHeight: '100vh', background: 'linear-gradient(135deg, #0a1628 0%, #1a2d4a 50%, #0f1d32 100%)', fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", color: '#e8f0f8', padding: '24px' },
+        card: { background: 'linear-gradient(145deg, rgba(30,50,80,0.8), rgba(20,35,60,0.9))', border: '1px solid rgba(100,150,200,0.2)', borderRadius: '16px' },
+        highlightCard: { background: 'linear-gradient(145deg, rgba(40,80,120,0.9), rgba(30,60,100,0.95))', border: '1px solid rgba(100,180,240,0.4)', borderRadius: '16px' },
+        statValue: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500 },
+        badge: { display: 'inline-block', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' },
+        badgeOptimal: { background: 'linear-gradient(135deg, #2e7d32, #4caf50)', color: 'white' },
+        badgeWarning: { background: 'linear-gradient(135deg, #e65100, #ff9800)', color: 'white' },
+        badgeMax: { background: 'linear-gradient(135deg, #1565c0, #42a5f5)', color: 'white' },
+        toggleBtn: { background: 'rgba(60,100,150,0.3)', border: '1px solid rgba(100,150,200,0.3)', color: '#a0c4e8', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' },
+        toggleBtnActive: { background: 'linear-gradient(135deg, #2a6090, #3a80b0)', borderColor: '#60b0e0', color: 'white' },
+        smallBtn: { background: 'rgba(60,100,150,0.3)', border: '1px solid rgba(100,150,200,0.3)', color: '#a0c4e8', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px' },
+        applyBtn: { background: 'linear-gradient(135deg, #2e7d32, #4caf50)', border: 'none', color: 'white', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px', fontWeight: '500' }
       };
 
       return (
@@ -378,27 +328,10 @@
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {/* Header */}
             <header style={{ marginBottom: '32px', textAlign: 'center' }}>
-              <div style={{ 
-                display: 'inline-block',
-                padding: '6px 16px',
-                background: 'rgba(60,120,180,0.2)',
-                borderRadius: '20px',
-                marginBottom: '12px',
-                fontSize: '12px',
-                letterSpacing: '1.5px',
-                textTransform: 'uppercase',
-                color: '#80b8e8'
-              }}>
+              <div style={{ display: 'inline-block', padding: '6px 16px', background: 'rgba(60,120,180,0.2)', borderRadius: '20px', marginBottom: '12px', fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase', color: '#80b8e8' }}>
                 Boston Retirement System • Group 1
               </div>
-              <h1 style={{ 
-                fontSize: '36px',
-                fontWeight: '700',
-                margin: '0 0 8px 0',
-                background: 'linear-gradient(135deg, #e8f4ff, #a0d0f0)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
+              <h1 style={{ fontSize: '36px', fontWeight: '700', margin: '0 0 8px 0', background: 'linear-gradient(135deg, #e8f4ff, #a0d0f0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Pension Optimization Tool
               </h1>
               <p style={{ color: '#8ab4d8', margin: 0, fontSize: '15px' }}>
@@ -406,98 +339,99 @@
               </p>
             </header>
 
-            {/* EDIC Service History Section */}
+            {/* EDIC Service History */}
             <div style={{ ...styles.card, padding: '28px', marginBottom: '24px' }}>
-              <h2 style={{ 
-                fontSize: '18px', 
-                fontWeight: '600', 
-                margin: '0 0 24px 0',
-                color: '#c0daf0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <span style={{ 
-                  width: '28px', 
-                  height: '28px', 
-                  background: 'linear-gradient(135deg, #3080b0, #60b0e0)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px'
-                }}>1</span>
-                EDIC Service History (for Buyback)
-              </h2>
-              
-              <p style={{ color: '#90b8d8', fontSize: '14px', marginBottom: '20px' }}>
-                Enter each year you worked at EDIC and your salary for that year. This calculates your buyback cost.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                {edicYears.map((item, index) => (
-                  <div key={index} style={{ 
-                    display: 'flex', 
-                    gap: '12px', 
-                    alignItems: 'center',
-                    padding: '12px 16px',
-                    background: 'rgba(20,40,70,0.5)',
-                    borderRadius: '10px'
-                  }}>
-                    <div style={{ flex: '0 0 100px' }}>
-                      <label style={{ display: 'block', marginBottom: '4px', color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase' }}>Year</label>
-                      <input
-                        type="number"
-                        value={item.year}
-                        onChange={(e) => updateEdicYear(index, 'year', e.target.value)}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div style={{ flex: '1' }}>
-                      <label style={{ display: 'block', marginBottom: '4px', color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase' }}>Annual Salary</label>
-                      <input
-                        type="number"
-                        value={item.salary}
-                        onChange={(e) => updateEdicYear(index, 'salary', e.target.value)}
-                        placeholder="e.g. 95000"
-                      />
-                    </div>
-                    <div style={{ flex: '0 0 auto', paddingTop: '20px' }}>
-                      <button style={styles.removeBtn} onClick={() => removeEdicYear(index)}>Remove</button>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: '#c0daf0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #3080b0, #60b0e0)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>1</span>
+                  EDIC Service History
+                </h2>
+                
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button style={{ ...styles.smallBtn, ...(entryMode === 'manual' ? styles.toggleBtnActive : {}) }} onClick={() => setEntryMode('manual')}>Enter Manually</button>
+                  <button style={{ ...styles.smallBtn, ...(entryMode === 'quickfill' ? styles.toggleBtnActive : {}) }} onClick={() => setEntryMode('quickfill')}>Quick Fill</button>
+                  {edicYears.length > 0 && <button style={styles.smallBtn} onClick={clearAll}>Clear All</button>}
+                </div>
               </div>
 
-              <button style={styles.addBtn} onClick={addEdicYear}>+ Add Year</button>
-
-              {/* Buyback Cost Summary */}
-              {edicYears.length > 0 && (
-                <div style={{ 
-                  marginTop: '24px', 
-                  padding: '20px', 
-                  background: 'rgba(40,80,120,0.4)', 
-                  borderRadius: '12px',
-                  border: '1px solid rgba(100,180,240,0.3)'
-                }}>
-                  <h3 style={{ margin: '0 0 16px 0', color: '#c0daf0', fontSize: '16px' }}>Buyback Cost Calculation</h3>
+              {entryMode === 'quickfill' ? (
+                <div style={{ padding: '20px', background: 'rgba(40,80,120,0.3)', borderRadius: '12px', marginBottom: '16px' }}>
+                  <p style={{ color: '#a0c4e8', fontSize: '14px', margin: '0 0 16px 0' }}>
+                    Enter your start year, end year, starting salary, and average annual raise. We'll calculate each year for you.
+                  </p>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', color: '#80a8c8', fontSize: '12px' }}>Start Year</label>
+                      <input type="number" value={quickFill.startYear} onChange={(e) => setQuickFill({ ...quickFill, startYear: parseInt(e.target.value) || 2020 })} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', color: '#80a8c8', fontSize: '12px' }}>End Year</label>
+                      <input type="number" value={quickFill.endYear} onChange={(e) => setQuickFill({ ...quickFill, endYear: parseInt(e.target.value) || 2024 })} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', color: '#80a8c8', fontSize: '12px' }}>Starting Salary</label>
+                      <input type="number" value={quickFill.startingSalary} onChange={(e) => setQuickFill({ ...quickFill, startingSalary: parseFloat(e.target.value) || 80000 })} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', color: '#80a8c8', fontSize: '12px' }}>Annual Raise %</label>
+                      <input type="number" step="0.5" value={quickFill.annualRaise} onChange={(e) => setQuickFill({ ...quickFill, annualRaise: parseFloat(e.target.value) || 3 })} />
+                    </div>
+                  </div>
+                  
+                  <button style={styles.applyBtn} onClick={applyQuickFill}>Generate Years</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 40px', gap: '8px', padding: '0 0 8px 0', borderBottom: '1px solid rgba(100,150,200,0.2)', marginBottom: '8px' }}>
+                    <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', fontWeight: '600' }}>Year</div>
+                    <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', fontWeight: '600' }}>Salary</div>
+                    <div></div>
+                  </div>
+
+                  {edicYears.map((item, index) => (
+                    <div key={`${item.year}-${index}`} className="entry-row">
+                      <input type="number" value={item.year} onChange={(e) => updateEdicYear(index, 'year', e.target.value)} className="compact" />
+                      <input type="number" value={item.salary} onChange={(e) => updateEdicYear(index, 'salary', e.target.value)} className="compact" />
+                      <button className="remove-btn" onClick={() => removeEdicYear(index)}>×</button>
+                    </div>
+                  ))}
+
+                  <div className="entry-row empty-row">
+                    <input ref={yearInputRef} type="number" placeholder="Year" value={newYear} onChange={(e) => setNewYear(e.target.value)} onKeyDown={handleYearKeyDown} className="compact" />
+                    <input ref={salaryInputRef} type="number" placeholder="Salary — press Enter to add" value={newSalary} onChange={(e) => setNewSalary(e.target.value)} onKeyDown={handleSalaryKeyDown} className="compact" />
+                    <div></div>
+                  </div>
+                  
+                  <p style={{ color: '#607890', fontSize: '12px', margin: '12px 0 0 0' }}>
+                    Type a year and salary, then press Enter to add.
+                  </p>
+                </div>
+              )}
+
+              {edicYears.length > 0 && (
+                <div style={{ marginTop: '24px', padding: '20px', background: 'rgba(40,80,120,0.4)', borderRadius: '12px', border: '1px solid rgba(100,180,240,0.3)' }}>
+                  <h3 style={{ margin: '0 0 16px 0', color: '#c0daf0', fontSize: '16px' }}>Buyback Cost Summary</h3>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years of Service</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#e0f0ff' }}>{buybackCalculation.totalYears}</div>
                     </div>
                     <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 3.45% (Reduced)</div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 3.45%</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.totalReducedRate)}</div>
+                      <div style={{ color: '#60a080', fontSize: '11px' }}>Reduced rate (apply by Nov 2026)</div>
                     </div>
                     <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 6.9% (Full Rate)</div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 6.9%</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#f0a060' }}>{formatCurrencyFull(buybackCalculation.totalFullRate)}</div>
+                      <div style={{ color: '#a08060', fontSize: '11px' }}>Full rate</div>
                     </div>
                     <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Savings with Reduced Rate</div>
+                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>You Save</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.savings)}</div>
+                      <div style={{ color: '#60a080', fontSize: '11px' }}>With reduced rate</div>
                     </div>
                   </div>
 
@@ -508,8 +442,8 @@
                         <tr style={{ borderBottom: '1px solid rgba(100,150,200,0.3)' }}>
                           <th style={{ padding: '8px', textAlign: 'left', color: '#80a8c8' }}>Year</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Salary</th>
-                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>11% Contribution</th>
-                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Years Interest</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>11%</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Yrs Int.</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 3.45%</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 6.9%</th>
                         </tr>
@@ -532,277 +466,118 @@
               )}
             </div>
 
-            {/* Personal Info Section */}
+            {/* Personal Info */}
             <div style={{ ...styles.card, padding: '28px', marginBottom: '24px' }}>
-              <h2 style={{ 
-                fontSize: '18px', 
-                fontWeight: '600', 
-                margin: '0 0 24px 0',
-                color: '#c0daf0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <span style={{ 
-                  width: '28px', 
-                  height: '28px', 
-                  background: 'linear-gradient(135deg, #3080b0, #60b0e0)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px'
-                }}>2</span>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 24px 0', color: '#c0daf0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #3080b0, #60b0e0)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>2</span>
                 Your Information
               </h2>
 
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                gap: '24px'
-              }}>
-                {/* Current Age */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Current Age
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Current Age</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="25"
-                      max="65"
-                      value={inputs.currentAge}
-                      onChange={(e) => handleInputChange('currentAge', parseInt(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.currentAge}
-                    </span>
+                    <input type="range" min="25" max="65" value={inputs.currentAge} onChange={(e) => handleInputChange('currentAge', parseInt(e.target.value))} style={{ flex: 1 }} />
+                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{inputs.currentAge}</span>
                   </div>
                 </div>
 
-                {/* BRS Join Date */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    BRS Membership Date
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>BRS Membership Date</label>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      style={{ 
-                        ...styles.toggleBtn, 
-                        ...(inputs.brsJoinDate === 'post-2012' ? styles.toggleBtnActive : {}) 
-                      }}
-                      onClick={() => handleInputChange('brsJoinDate', 'post-2012')}
-                    >
-                      On/After Apr 2, 2012
-                    </button>
-                    <button
-                      style={{ 
-                        ...styles.toggleBtn, 
-                        ...(inputs.brsJoinDate === 'pre-2012' ? styles.toggleBtnActive : {}) 
-                      }}
-                      onClick={() => handleInputChange('brsJoinDate', 'pre-2012')}
-                    >
-                      Before Apr 2, 2012
-                    </button>
+                    <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'post-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'post-2012')}>On/After Apr 2, 2012</button>
+                    <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'pre-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'pre-2012')}>Before Apr 2, 2012</button>
                   </div>
                 </div>
 
-                {/* Current City Service Years */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Current City Service (Years in BRS)
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Current City Service (Years in BRS)</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="0"
-                      max="30"
-                      step="0.5"
-                      value={inputs.currentCityServiceYears}
-                      onChange={(e) => handleInputChange('currentCityServiceYears', parseFloat(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.currentCityServiceYears}
-                    </span>
+                    <input type="range" min="0" max="30" step="0.5" value={inputs.currentCityServiceYears} onChange={(e) => handleInputChange('currentCityServiceYears', parseFloat(e.target.value))} style={{ flex: 1 }} />
+                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{inputs.currentCityServiceYears}</span>
                   </div>
                 </div>
 
-                {/* Expected Final Salary */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Current Annual Salary
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Current Annual Salary</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="40000"
-                      max="250000"
-                      step="1000"
-                      value={inputs.expectedFinalSalary}
-                      onChange={(e) => handleInputChange('expectedFinalSalary', parseInt(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '80px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {formatCurrency(inputs.expectedFinalSalary)}
-                    </span>
+                    <input type="range" min="40000" max="250000" step="1000" value={inputs.expectedFinalSalary} onChange={(e) => handleInputChange('expectedFinalSalary', parseInt(e.target.value))} style={{ flex: 1 }} />
+                    <span style={{ ...styles.statValue, minWidth: '80px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{formatCurrency(inputs.expectedFinalSalary)}</span>
                   </div>
                 </div>
 
-                {/* Salary Growth Rate */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Expected Annual Salary Growth
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Expected Annual Salary Growth</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="0"
-                      max="6"
-                      step="0.5"
-                      value={inputs.salaryGrowthRate}
-                      onChange={(e) => handleInputChange('salaryGrowthRate', parseFloat(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.salaryGrowthRate}%
-                    </span>
+                    <input type="range" min="0" max="6" step="0.5" value={inputs.salaryGrowthRate} onChange={(e) => handleInputChange('salaryGrowthRate', parseFloat(e.target.value))} style={{ flex: 1 }} />
+                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{inputs.salaryGrowthRate}%</span>
                   </div>
                 </div>
 
-                {/* Life Expectancy */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>
-                    Life Expectancy (for lifetime calculations)
-                  </label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Life Expectancy</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input
-                      type="range"
-                      min="70"
-                      max="100"
-                      value={inputs.lifeExpectancy}
-                      onChange={(e) => handleInputChange('lifeExpectancy', parseInt(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>
-                      {inputs.lifeExpectancy}
-                    </span>
+                    <input type="range" min="70" max="100" value={inputs.lifeExpectancy} onChange={(e) => handleInputChange('lifeExpectancy', parseInt(e.target.value))} style={{ flex: 1 }} />
+                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{inputs.lifeExpectancy}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Key Insights Cards */}
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '16px',
-              marginBottom: '24px'
-            }}>
-              {/* Optimal with Buyback */}
+            {/* Key Insights */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
               {calculations.optimalWithBuyback && (
                 <div style={{ ...styles.highlightCard, padding: '24px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <span style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Best with Buyback
-                    </span>
+                    <span style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' }}>Best with Buyback</span>
                     <span style={{ ...styles.badge, ...styles.badgeOptimal }}>Recommended</span>
                   </div>
-                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#e0f8ff', marginBottom: '8px' }}>
-                    Age {calculations.optimalWithBuyback.retireAge}
-                  </div>
-                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>
-                    {calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} years service • {formatPercent(calculations.optimalWithBuyback.percentWith)} of salary
-                  </div>
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '1fr 1fr', 
-                    gap: '12px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid rgba(100,150,200,0.2)'
-                  }}>
+                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#e0f8ff', marginBottom: '8px' }}>Age {calculations.optimalWithBuyback.retireAge}</div>
+                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} years service • {formatPercent(calculations.optimalWithBuyback.percentWith)} of salary</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Annual Pension</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#60d060' }}>
-                        {formatCurrency(calculations.optimalWithBuyback.annualPensionWith)}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#60d060' }}>{formatCurrency(calculations.optimalWithBuyback.annualPensionWith)}</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Lifetime Total</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#60d060' }}>
-                        {formatCurrency(calculations.optimalWithBuyback.lifetimeBenefitWith)}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#60d060' }}>{formatCurrency(calculations.optimalWithBuyback.lifetimeBenefitWith)}</div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Buyback ROI */}
               {calculations.bestBuybackROI && edicYears.length > 0 && (
                 <div style={{ ...styles.card, padding: '24px' }}>
-                  <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px' }}>
-                    Buyback Investment
-                  </div>
-                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#f0c060', marginBottom: '8px' }}>
-                    {formatCurrency(calculations.bestBuybackROI.buybackCost)}
-                  </div>
-                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>
-                    Cost at 3.45% rate (reduced)
-                  </div>
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '1fr 1fr', 
-                    gap: '12px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid rgba(100,150,200,0.2)'
-                  }}>
+                  <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '16px' }}>Buyback Investment</div>
+                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#f0c060', marginBottom: '8px' }}>{formatCurrency(calculations.bestBuybackROI.buybackCost)}</div>
+                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>Cost at 3.45% rate</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Lifetime ROI</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: calculations.bestBuybackROI.roi > 0 ? '#60d060' : '#e06060' }}>
-                        {formatPercent(calculations.bestBuybackROI.roi)}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: calculations.bestBuybackROI.roi > 0 ? '#60d060' : '#e06060' }}>{formatPercent(calculations.bestBuybackROI.roi)}</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Payback Period</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0d0f0' }}>
-                        {calculations.bestBuybackROI.paybackYears < 100 ? `${calculations.bestBuybackROI.paybackYears.toFixed(1)} yrs` : 'N/A'}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0d0f0' }}>{calculations.bestBuybackROI.paybackYears < 100 ? `${calculations.bestBuybackROI.paybackYears.toFixed(1)} yrs` : 'N/A'}</div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Without Buyback */}
               {calculations.optimalWithoutBuyback && (
                 <div style={{ ...styles.card, padding: '24px' }}>
-                  <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px' }}>
-                    Without Buyback
-                  </div>
-                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#c0d8e8', marginBottom: '8px' }}>
-                    Age {calculations.optimalWithoutBuyback.retireAge}
-                  </div>
-                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>
-                    {calculations.optimalWithoutBuyback.serviceAtRetirement.toFixed(1)} years service • {formatPercent(calculations.optimalWithoutBuyback.percentWithout)} of salary
-                  </div>
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '1fr 1fr', 
-                    gap: '12px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid rgba(100,150,200,0.2)'
-                  }}>
+                  <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '16px' }}>Without Buyback</div>
+                  <div style={{ ...styles.statValue, fontSize: '42px', color: '#c0d8e8', marginBottom: '8px' }}>Age {calculations.optimalWithoutBuyback.retireAge}</div>
+                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithoutBuyback.serviceAtRetirement.toFixed(1)} years service • {formatPercent(calculations.optimalWithoutBuyback.percentWithout)} of salary</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Annual Pension</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0c8e0' }}>
-                        {formatCurrency(calculations.optimalWithoutBuyback.annualPensionWithout)}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0c8e0' }}>{formatCurrency(calculations.optimalWithoutBuyback.annualPensionWithout)}</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Lifetime Total</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0c8e0' }}>
-                        {formatCurrency(calculations.optimalWithoutBuyback.lifetimeBenefitWithout)}
-                      </div>
+                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0c8e0' }}>{formatCurrency(calculations.optimalWithoutBuyback.lifetimeBenefitWithout)}</div>
                     </div>
                   </div>
                 </div>
@@ -811,25 +586,8 @@
 
             {/* Scenario Table */}
             <div style={{ ...styles.card, padding: '28px', marginBottom: '24px' }}>
-              <h2 style={{ 
-                fontSize: '18px', 
-                fontWeight: '600', 
-                margin: '0 0 20px 0',
-                color: '#c0daf0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <span style={{ 
-                  width: '28px', 
-                  height: '28px', 
-                  background: 'linear-gradient(135deg, #3080b0, #60b0e0)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px'
-                }}>3</span>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 20px 0', color: '#c0daf0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #3080b0, #60b0e0)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>3</span>
                 All Retirement Scenarios
               </h2>
 
@@ -837,68 +595,31 @@
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(100,150,200,0.3)' }}>
-                      {['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status'].map((header, i) => (
-                        <th key={header} style={{ 
-                          padding: '12px 8px', 
-                          textAlign: header === 'Status' ? 'center' : (header === 'Retire Age' ? 'left' : 'right'), 
-                          color: '#80a8c8', 
-                          fontWeight: '600', 
-                          fontSize: '11px', 
-                          textTransform: 'uppercase', 
-                          letterSpacing: '0.5px' 
-                        }}>{header}</th>
+                      {['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status'].map((h) => (
+                        <th key={h} style={{ padding: '12px 8px', textAlign: h === 'Status' ? 'center' : (h === 'Retire Age' ? 'left' : 'right'), color: '#80a8c8', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {calculations.scenarios.map((scenario) => {
-                      const isOptimal = calculations.optimalWithBuyback?.retireAge === scenario.retireAge;
-                      const isSelected = selectedScenario === scenario.retireAge;
-                      
+                    {calculations.scenarios.map((s) => {
+                      const isOptimal = calculations.optimalWithBuyback?.retireAge === s.retireAge;
+                      const isSelected = selectedScenario === s.retireAge;
                       return (
-                        <tr 
-                          key={scenario.retireAge}
-                          className="scenario-row"
-                          onClick={() => setSelectedScenario(isSelected ? null : scenario.retireAge)}
-                          style={{ 
-                            borderBottom: '1px solid rgba(100,150,200,0.1)',
-                            background: isSelected ? 'rgba(60,140,200,0.25)' : (isOptimal ? 'rgba(60,160,100,0.1)' : undefined),
-                            borderLeft: isSelected ? '3px solid #60b0e0' : '3px solid transparent'
-                          }}
-                        >
+                        <tr key={s.retireAge} className="scenario-row" onClick={() => setSelectedScenario(isSelected ? null : s.retireAge)}
+                          style={{ borderBottom: '1px solid rgba(100,150,200,0.1)', background: isSelected ? 'rgba(60,140,200,0.25)' : (isOptimal ? 'rgba(60,160,100,0.1)' : undefined), borderLeft: isSelected ? '3px solid #60b0e0' : '3px solid transparent', cursor: 'pointer' }}>
                           <td style={{ padding: '14px 8px', fontWeight: isOptimal ? '600' : '400' }}>
-                            {scenario.retireAge}
+                            {s.retireAge}
                             {isOptimal && <span style={{ ...styles.badge, ...styles.badgeOptimal, marginLeft: '8px' }}>Best</span>}
                           </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>
-                            {scenario.serviceAtRetirement.toFixed(1)}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>
-                            {scenario.serviceWithBuyback.toFixed(1)}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>
-                            {formatCurrency(scenario.avgSalary)}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>
-                            {formatPercent(scenario.percentWithout)}
-                            {scenario.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>
-                            {formatPercent(scenario.percentWith)}
-                            {scenario.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>
-                            {formatCurrency(scenario.annualPensionWithout)}
-                          </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>
-                            {formatCurrency(scenario.annualPensionWith)}
-                          </td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{s.serviceAtRetirement.toFixed(1)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{s.serviceWithBuyback.toFixed(1)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.avgSalary)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatPercent(s.percentWithout)}{s.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{formatPercent(s.percentWith)}{s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.annualPensionWithout)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>{formatCurrency(s.annualPensionWith)}</td>
                           <td style={{ padding: '14px 8px', textAlign: 'center' }}>
-                            {scenario.buybackWasted ? (
-                              <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span>
-                            ) : scenario.hitsMaxWith ? (
-                              <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span>
-                            ) : null}
+                            {s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
                           </td>
                         </tr>
                       );
@@ -906,77 +627,30 @@
                   </tbody>
                 </table>
               </div>
-              
-              <div style={{ marginTop: '16px', fontSize: '12px', color: '#80a8c8' }}>
-                ★ = Hits 80% maximum benefit cap &nbsp;|&nbsp; BB = Buyback &nbsp;|&nbsp; Click any row for details
-              </div>
+              <div style={{ marginTop: '16px', fontSize: '12px', color: '#80a8c8' }}>★ = Hits 80% max | BB = Buyback | Click row for details</div>
             </div>
 
             {/* Selected Scenario Detail */}
             {selectedScenario && (() => {
               const s = calculations.scenarios.find(sc => sc.retireAge === selectedScenario);
               if (!s) return null;
-              
               return (
                 <div style={{ ...styles.highlightCard, padding: '28px', marginBottom: '24px' }}>
-                  <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 20px 0', color: '#c0daf0' }}>
-                    Detailed Analysis: Retire at Age {s.retireAge}
-                  </h2>
-                  
+                  <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 20px 0', color: '#c0daf0' }}>Detailed Analysis: Retire at Age {s.retireAge}</h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Until Retirement</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsUntilRetirement}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Collecting Pension</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsCollecting}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Year Avg Salary</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalary)}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrencyFull(s.buybackCost)}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (6.9% full)</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: '#f0a060' }}>{formatCurrencyFull(s.buybackCostFull)}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Benefit from Buyback</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: s.annualBenefit > 0 ? '#60d080' : '#a0a0a0' }}>
-                        +{formatCurrency(s.annualBenefit)}/yr
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Lifetime Gain from Buyback</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: s.lifetimeGain > 0 ? '#60d080' : '#a0a0a0' }}>
-                        {formatCurrency(s.lifetimeGain)}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Net Gain (After Buyback Cost)</div>
-                      <div style={{ ...styles.statValue, fontSize: '24px', color: s.netLifetimeGain > 0 ? '#60d080' : '#e06060' }}>
-                        {formatCurrency(s.netLifetimeGain)}
-                      </div>
-                    </div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Until Retirement</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsUntilRetirement}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Collecting</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsCollecting}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg Salary</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalary)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrencyFull(s.buybackCost)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (6.9%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#f0a060' }}>{formatCurrencyFull(s.buybackCostFull)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Benefit from BB</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.annualBenefit > 0 ? '#60d080' : '#a0a0a0' }}>+{formatCurrency(s.annualBenefit)}/yr</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Lifetime Gain from BB</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.lifetimeGain > 0 ? '#60d080' : '#a0a0a0' }}>{formatCurrency(s.lifetimeGain)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Net Gain (After Cost)</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.netLifetimeGain > 0 ? '#60d080' : '#e06060' }}>{formatCurrency(s.netLifetimeGain)}</div></div>
                   </div>
-                  
                   {s.buybackWasted && (
-                    <div style={{ 
-                      marginTop: '20px',
-                      padding: '16px',
-                      background: 'rgba(230,100,50,0.15)',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(230,100,50,0.3)'
-                    }}>
+                    <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(230,100,50,0.15)', borderRadius: '12px', border: '1px solid rgba(230,100,50,0.3)' }}>
                       <strong style={{ color: '#f0a060' }}>⚠️ Buyback Warning:</strong>
-                      <span style={{ color: '#d0c0a0', marginLeft: '8px' }}>
-                        You would already hit the 80% max benefit without buyback at this retirement age. 
-                        Buying back EDIC service would not increase your pension.
-                      </span>
+                      <span style={{ color: '#d0c0a0', marginLeft: '8px' }}>You would already hit the 80% max without buyback. Buying back EDIC service would not increase your pension.</span>
                     </div>
                   )}
                 </div>
@@ -984,20 +658,9 @@
             })()}
 
             {/* Footer */}
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '24px',
-              color: '#607890',
-              fontSize: '12px',
-              borderTop: '1px solid rgba(100,150,200,0.1)'
-            }}>
-              <p style={{ margin: '0 0 8px 0' }}>
-                This tool provides estimates based on the Boston Retirement System Group 1 formulas. 
-                Actual benefits may vary. Reduced rate (3.45%) applies if you submit by November 25, 2026.
-              </p>
-              <p style={{ margin: 0 }}>
-                Consult with the Boston Retirement System at <strong style={{ color: '#80a8c8' }}>retirementboard@boston.gov</strong> for official calculations.
-              </p>
+            <div style={{ textAlign: 'center', padding: '24px', color: '#607890', fontSize: '12px', borderTop: '1px solid rgba(100,150,200,0.1)' }}>
+              <p style={{ margin: '0 0 8px 0' }}>This tool provides estimates based on the Boston Retirement System Group 1 formulas. Actual benefits may vary. Reduced rate (3.45%) applies if you submit by November 25, 2026.</p>
+              <p style={{ margin: 0 }}>Consult with the Boston Retirement System at <strong style={{ color: '#80a8c8' }}>retirementboard@boston.gov</strong> for official calculations.</p>
             </div>
           </div>
         </div>
