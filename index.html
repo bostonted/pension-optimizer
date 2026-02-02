@@ -243,32 +243,39 @@
 
         const projectSalary = (yearsFromNow) => expectedFinalSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
         
-        // Calculate frozen salary if departing early
-        const getFrozenHighestAvgSalary = () => {
-          if (!willDepart) return null;
-          const salaries = [];
-          for (let i = 0; i <= yearsUntilDeparture; i++) {
-            salaries.push(projectSalary(i));
+        // Get all EDIC salaries (for buyback years)
+        const edicSalaries = edicYears.map(y => y.salary);
+        
+        // Calculate highest avg salary including EDIC years if buyback
+        const getHighestAvgSalary = (retirementAge, includeBuyback) => {
+          const yearsUntilRetirement = retirementAge - currentAge;
+          const allSalaries = [];
+          
+          // Add EDIC salaries if buyback is included
+          if (includeBuyback && edicSalaries.length > 0) {
+            allSalaries.push(...edicSalaries);
           }
-          salaries.sort((a, b) => b - a);
-          return salaries.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears;
+          
+          // Add City salaries up to retirement or departure
+          const maxCityYears = willDepart ? Math.min(yearsUntilRetirement, yearsUntilDeparture) : yearsUntilRetirement;
+          for (let i = 0; i <= Math.max(0, maxCityYears); i++) {
+            allSalaries.push(projectSalary(i));
+          }
+          
+          // Sort descending and take highest N years
+          allSalaries.sort((a, b) => b - a);
+          const topYears = allSalaries.slice(0, avgYears);
+          return topYears.length > 0 ? topYears.reduce((a, b) => a + b, 0) / topYears.length : 0;
         };
         
-        const frozenAvgSalary = getFrozenHighestAvgSalary();
-
-        const getHighestAvgSalary = (retirementAge) => {
-          // If departing early, use frozen salary
-          if (willDepart && retirementAge >= departureAge) {
-            return frozenAvgSalary;
-          }
-          const yearsUntilRetirement = retirementAge - currentAge;
-          const salaries = [];
-          for (let i = Math.max(0, yearsUntilRetirement - 10); i <= yearsUntilRetirement; i++) {
-            salaries.push(projectSalary(i));
-          }
-          salaries.sort((a, b) => b - a);
-          return salaries.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears;
+        // Calculate frozen salary if departing early (without buyback for comparison)
+        const getFrozenHighestAvgSalary = (includeBuyback) => {
+          if (!willDepart) return null;
+          return getHighestAvgSalary(departureAge, includeBuyback);
         };
+        
+        const frozenAvgSalary = getFrozenHighestAvgSalary(false);
+        const frozenAvgSalaryWithBuyback = getFrozenHighestAvgSalary(true);
 
         const getBenefitPercent = (age, serviceYears) => {
           const basePercent = table[age] || 0;
@@ -290,13 +297,17 @@
           const yearsUntilRetirement = retireAge - currentAge;
           const serviceAtRetirement = getServiceAtRetirement(retireAge);
           const serviceWithBuyback = serviceAtRetirement + edicServiceYears;
-          const avgSalary = getHighestAvgSalary(retireAge);
+          
+          // Calculate avg salary WITHOUT buyback (only City years)
+          const avgSalaryWithout = getHighestAvgSalary(retireAge, false);
+          // Calculate avg salary WITH buyback (EDIC + City years)
+          const avgSalaryWith = getHighestAvgSalary(retireAge, true);
 
           const percentWithout = getBenefitPercent(retireAge, serviceAtRetirement);
           const percentWith = getBenefitPercent(retireAge, serviceWithBuyback);
           
-          const annualPensionWithout = avgSalary * (percentWithout / 100);
-          const annualPensionWith = avgSalary * (percentWith / 100);
+          const annualPensionWithout = avgSalaryWithout * (percentWithout / 100);
+          const annualPensionWith = avgSalaryWith * (percentWith / 100);
           const annualBenefit = annualPensionWith - annualPensionWithout;
 
           const yearsCollecting = lifeExpectancy - retireAge;
@@ -320,7 +331,8 @@
           const notEligible = tooYoung || percentWithout === 0;
 
           scenarios.push({
-            retireAge, yearsUntilRetirement, serviceAtRetirement, serviceWithBuyback, avgSalary,
+            retireAge, yearsUntilRetirement, serviceAtRetirement, serviceWithBuyback, 
+            avgSalaryWithout, avgSalaryWith,
             percentWithout, percentWith, annualPensionWithout, annualPensionWith, annualBenefit,
             lifetimeBenefitWithout, lifetimeBenefitWith, lifetimeGain, buybackCost, buybackCostFull,
             netLifetimeGain, roi, paybackYears, hitsMaxWithout, hitsMaxWith, buybackWasted: hitsMaxWithout, yearsCollecting,
@@ -682,7 +694,7 @@
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(100,150,200,0.3)' }}>
-                      {['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status'].map((h) => (
+                      {['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', 'Avg w/ BB', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status'].map((h) => (
                         <th key={h} style={{ padding: '12px 8px', textAlign: h === 'Status' ? 'center' : (h === 'Retire Age' ? 'left' : 'right'), color: '#80a8c8', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
@@ -701,7 +713,8 @@
                           </td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : s.serviceAtRetirement.toFixed(1)}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : s.serviceWithBuyback.toFixed(1)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatCurrency(s.avgSalary)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatCurrency(s.avgSalaryWithout)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : formatCurrency(s.avgSalaryWith)}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatPercent(s.percentWithout)}{!dimmed && s.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : formatPercent(s.percentWith)}{!dimmed && s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatCurrency(s.annualPensionWithout)}</td>
@@ -731,7 +744,8 @@
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Until Retirement</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsUntilRetirement}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Collecting</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsCollecting}</div></div>
-                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg Salary</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalary)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg (No BB)</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalaryWithout)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg (w/ BB)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#80c8e8' }}>{formatCurrency(s.avgSalaryWith)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrencyFull(s.buybackCost)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (6.9%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#f0a060' }}>{formatCurrencyFull(s.buybackCostFull)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Benefit from BB</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.annualBenefit > 0 ? '#60d080' : '#a0a0a0' }}>+{formatCurrency(s.annualBenefit)}/yr</div></div>
