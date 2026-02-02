@@ -7,6 +7,8 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
@@ -361,6 +363,160 @@
       const formatCurrencyFull = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
       const formatPercent = (num) => `${num.toFixed(1)}%`;
 
+      const generatePDF = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        let y = 20;
+
+        // Title
+        doc.setFontSize(20);
+        doc.setTextColor(40, 80, 120);
+        doc.text('Boston Retirement System', pageWidth / 2, y, { align: 'center' });
+        y += 8;
+        doc.setFontSize(16);
+        doc.text('Pension Optimization Report', pageWidth / 2, y, { align: 'center' });
+        y += 6;
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, y, { align: 'center' });
+        y += 15;
+
+        // Personal Information
+        doc.setFontSize(14);
+        doc.setTextColor(40, 80, 120);
+        doc.text('Personal Information', 14, y);
+        y += 8;
+        doc.setFontSize(10);
+        doc.setTextColor(60, 60, 60);
+        doc.text(`Current Age: ${inputs.currentAge}`, 14, y);
+        doc.text(`BRS Membership: ${inputs.brsJoinDate === 'post-2012' ? 'On/After Apr 2, 2012' : 'Before Apr 2, 2012'}`, 105, y);
+        y += 6;
+        doc.text(`Current City Service: ${inputs.currentCityServiceYears} years`, 14, y);
+        doc.text(`Current Salary: ${formatCurrencyFull(inputs.expectedFinalSalary)}`, 105, y);
+        y += 6;
+        doc.text(`Expected Salary Growth: ${inputs.salaryGrowthRate}%`, 14, y);
+        doc.text(`Life Expectancy: ${inputs.lifeExpectancy}`, 105, y);
+        y += 6;
+        if (inputs.departureAge) {
+          doc.text(`Planned Departure Age: ${inputs.departureAge}`, 14, y);
+          y += 6;
+        }
+        y += 8;
+
+        // EDIC Service History
+        if (edicYears.length > 0) {
+          doc.setFontSize(14);
+          doc.setTextColor(40, 80, 120);
+          doc.text('EDIC Service History (Buyback)', 14, y);
+          y += 8;
+
+          const edicData = edicYears.map(item => [
+            item.year.toString(),
+            formatCurrencyFull(item.salary),
+            formatCurrencyFull(item.salary * 0.11)
+          ]);
+
+          doc.autoTable({
+            startY: y,
+            head: [['Year', 'Salary', '11% Contribution']],
+            body: edicData,
+            theme: 'striped',
+            headStyles: { fillColor: [40, 80, 120] },
+            margin: { left: 14, right: 14 },
+            tableWidth: 80
+          });
+
+          y = doc.lastAutoTable.finalY + 10;
+
+          // Buyback Cost Summary
+          doc.setFontSize(12);
+          doc.setTextColor(40, 80, 120);
+          doc.text('Buyback Cost Summary', 14, y);
+          y += 6;
+          doc.setFontSize(10);
+          doc.setTextColor(60, 60, 60);
+          doc.text(`Total Years: ${buybackCalculation.totalYears}`, 14, y);
+          y += 5;
+          doc.text(`Cost at 3.45% (Reduced Rate): ${formatCurrencyFull(buybackCalculation.totalReducedRate)}`, 14, y);
+          y += 5;
+          doc.text(`Cost at 6.9% (Full Rate): ${formatCurrencyFull(buybackCalculation.totalFullRate)}`, 14, y);
+          y += 5;
+          doc.setTextColor(40, 120, 40);
+          doc.text(`Savings with Reduced Rate: ${formatCurrencyFull(buybackCalculation.savings)}`, 14, y);
+          y += 12;
+        }
+
+        // Recommendation
+        if (calculations.optimalWithBuyback) {
+          doc.setFontSize(14);
+          doc.setTextColor(40, 80, 120);
+          doc.text('Recommended Strategy', 14, y);
+          y += 8;
+          doc.setFontSize(11);
+          doc.setTextColor(40, 120, 40);
+          doc.text(`Optimal Retirement Age: ${calculations.optimalWithBuyback.retireAge} (with buyback)`, 14, y);
+          y += 6;
+          doc.setFontSize(10);
+          doc.setTextColor(60, 60, 60);
+          doc.text(`Total Service: ${calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} years`, 14, y);
+          doc.text(`Benefit Percentage: ${formatPercent(calculations.optimalWithBuyback.percentWith)}`, 105, y);
+          y += 5;
+          doc.text(`Annual Pension: ${formatCurrencyFull(calculations.optimalWithBuyback.annualPensionWith)}`, 14, y);
+          doc.text(`Lifetime Total: ${formatCurrencyFull(calculations.optimalWithBuyback.lifetimeBenefitWith)}`, 105, y);
+          y += 12;
+        }
+
+        // Check if we need a new page
+        if (y > 200) {
+          doc.addPage();
+          y = 20;
+        }
+
+        // All Scenarios Table
+        doc.setFontSize(14);
+        doc.setTextColor(40, 80, 120);
+        doc.text('All Retirement Scenarios', 14, y);
+        y += 8;
+
+        const eligibleScenarios = calculations.scenarios.filter(s => !s.notEligible && !s.alreadyPast);
+        const scenarioData = eligibleScenarios.map(s => [
+          s.retireAge.toString(),
+          s.serviceAtRetirement.toFixed(1),
+          s.serviceWithBuyback.toFixed(1),
+          formatCurrency(s.avgSalaryWith),
+          formatPercent(s.percentWith),
+          formatCurrency(s.annualPensionWithout),
+          formatCurrency(s.annualPensionWith)
+        ]);
+
+        doc.autoTable({
+          startY: y,
+          head: [['Age', 'Service', 'w/ BB', 'Avg Salary', '% w/ BB', 'Annual (No BB)', 'Annual (w/ BB)']],
+          body: scenarioData,
+          theme: 'striped',
+          headStyles: { fillColor: [40, 80, 120], fontSize: 8 },
+          bodyStyles: { fontSize: 8 },
+          margin: { left: 14, right: 14 }
+        });
+
+        // Footer
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(
+            'This report provides estimates only. Consult Boston Retirement System for official calculations.',
+            pageWidth / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
+        }
+
+        doc.save('pension-optimization-report.pdf');
+      };
+
       const styles = {
         container: { minHeight: '100vh', background: 'linear-gradient(135deg, #0a1628 0%, #1a2d4a 50%, #0f1d32 100%)', fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", color: '#e8f0f8', padding: '24px' },
         card: { background: 'linear-gradient(145deg, rgba(30,50,80,0.8), rgba(20,35,60,0.9))', border: '1px solid rgba(100,150,200,0.2)', borderRadius: '16px' },
@@ -700,30 +856,26 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {calculations.scenarios.map((s) => {
+                    {calculations.scenarios.filter(s => !s.notEligible && !s.alreadyPast).map((s) => {
                       const isOptimal = calculations.optimalWithBuyback?.retireAge === s.retireAge;
                       const isSelected = selectedScenario === s.retireAge;
-                      const dimmed = s.notEligible || s.alreadyPast;
                       return (
-                        <tr key={s.retireAge} className="scenario-row" onClick={() => !dimmed && setSelectedScenario(isSelected ? null : s.retireAge)}
-                          style={{ borderBottom: '1px solid rgba(100,150,200,0.1)', background: isSelected ? 'rgba(60,140,200,0.25)' : (isOptimal ? 'rgba(60,160,100,0.1)' : undefined), borderLeft: isSelected ? '3px solid #60b0e0' : '3px solid transparent', cursor: dimmed ? 'default' : 'pointer', opacity: dimmed ? 0.4 : 1 }}>
+                        <tr key={s.retireAge} className="scenario-row" onClick={() => setSelectedScenario(isSelected ? null : s.retireAge)}
+                          style={{ borderBottom: '1px solid rgba(100,150,200,0.1)', background: isSelected ? 'rgba(60,140,200,0.25)' : (isOptimal ? 'rgba(60,160,100,0.1)' : undefined), borderLeft: isSelected ? '3px solid #60b0e0' : '3px solid transparent', cursor: 'pointer' }}>
                           <td style={{ padding: '14px 8px', fontWeight: isOptimal ? '600' : '400' }}>
                             {s.retireAge}
                             {isOptimal && <span style={{ ...styles.badge, ...styles.badgeOptimal, marginLeft: '8px' }}>Best</span>}
                           </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : s.serviceAtRetirement.toFixed(1)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : s.serviceWithBuyback.toFixed(1)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatCurrency(s.avgSalaryWithout)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : formatCurrency(s.avgSalaryWith)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatPercent(s.percentWithout)}{!dimmed && s.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{dimmed ? '—' : formatPercent(s.percentWith)}{!dimmed && s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{dimmed ? '—' : formatCurrency(s.annualPensionWithout)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>{dimmed ? '—' : formatCurrency(s.annualPensionWith)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{s.serviceAtRetirement.toFixed(1)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{s.serviceWithBuyback.toFixed(1)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.avgSalaryWithout)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{formatCurrency(s.avgSalaryWith)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatPercent(s.percentWithout)}{s.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{formatPercent(s.percentWith)}{s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.annualPensionWithout)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>{formatCurrency(s.annualPensionWith)}</td>
                           <td style={{ padding: '14px 8px', textAlign: 'center' }}>
-                            {s.alreadyPast ? <span style={{ color: '#607890', fontSize: '11px' }}>Past</span> : 
-                             s.tooYoung ? <span style={{ color: '#607890', fontSize: '11px' }}>Min age {s.minRetirementAge}</span> :
-                             s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : 
-                             s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
+                            {s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
                           </td>
                         </tr>
                       );
@@ -732,6 +884,33 @@
                 </table>
               </div>
               <div style={{ marginTop: '16px', fontSize: '12px', color: '#80a8c8' }}>★ = Hits 80% max | BB = Buyback | Click row for details</div>
+              
+              <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(100,150,200,0.2)', textAlign: 'center' }}>
+                <button 
+                  onClick={generatePDF}
+                  style={{ 
+                    background: 'linear-gradient(135deg, #2e7d32, #4caf50)', 
+                    border: 'none', 
+                    color: 'white', 
+                    padding: '14px 28px', 
+                    borderRadius: '10px', 
+                    cursor: 'pointer', 
+                    fontFamily: 'inherit', 
+                    fontSize: '15px', 
+                    fontWeight: '600',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: '0 4px 12px rgba(46, 125, 50, 0.3)'
+                  }}
+                >
+                  <span style={{ fontSize: '18px' }}>📄</span>
+                  Download PDF Report
+                </button>
+                <p style={{ color: '#607890', fontSize: '12px', marginTop: '10px' }}>
+                  Generate a downloadable report with all your pension scenarios
+                </p>
+              </div>
             </div>
 
             {/* Selected Scenario Detail */}
