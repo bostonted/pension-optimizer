@@ -507,7 +507,7 @@
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
           doc.text(
-            'This report provides estimates only. Consult Boston Retirement System for official calculations.',
+            'This is an experiment subject to errors. Do not make any decisions based on its output. Consult Human Resources for official guidance.',
             pageWidth / 2,
             doc.internal.pageSize.getHeight() - 10,
             { align: 'center' }
@@ -543,9 +543,28 @@
               <h1 style={{ fontSize: '36px', fontWeight: '700', margin: '0 0 8px 0', background: 'linear-gradient(135deg, #e8f4ff, #a0d0f0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Pension Optimization Tool
               </h1>
-              <p style={{ color: '#8ab4d8', margin: 0, fontSize: '15px' }}>
-                Find your optimal retirement age and evaluate EDIC service buyback
-              </p>
+              <div style={{ 
+                border: '3px solid #ffd700',
+                borderRadius: '12px',
+                padding: '16px 20px',
+                background: 'rgba(255,215,0,0.08)',
+                boxShadow: '0 0 20px rgba(255,215,0,0.2)',
+                marginTop: '12px'
+              }}>
+                <p style={{ color: '#8ab4d8', margin: 0, fontSize: '15px' }}>
+                  This calculator is an experiment subject to errors. Do not make any decisions based on its output. 
+                  Send Ted any ideas for improving this tool! <a 
+                    href="#feedback-form" 
+                    style={{ 
+                      color: '#ffd700', 
+                      textDecoration: 'underline',
+                      fontWeight: 600
+                    }}
+                  >
+                    Click here
+                  </a>.
+                </p>
+              </div>
             </header>
 
             {/* EDIC Service History */}
@@ -941,10 +960,120 @@
               );
             })()}
 
+            {/* Feedback Form */}
+            <div 
+              id="feedback-form"
+              style={{
+                ...styles.card,
+                padding: '28px',
+                marginBottom: '24px',
+                background: 'linear-gradient(145deg, rgba(40,70,100,0.4), rgba(30,60,90,0.5))',
+                border: '1px solid rgba(100,150,200,0.3)'
+              }}
+            >
+              <h2 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                margin: '0 0 8px 0', 
+                color: '#c0daf0' 
+              }}>
+                Send Feedback to Ted
+              </h2>
+              <p style={{
+                fontSize: '14px',
+                color: '#8ab4d8',
+                marginBottom: '20px',
+                lineHeight: '1.5'
+              }}>
+                Questions about the calculator? Found a bug? Have suggestions for improvement?
+              </p>
+              
+              <form 
+                action="https://formspree.io/f/mreagbzk" 
+                method="POST"
+                style={{ maxWidth: '600px' }}
+              >
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '8px', 
+                    fontWeight: 500,
+                    color: '#a0c8e8',
+                    fontSize: '14px'
+                  }}>
+                    Your Email:
+                  </label>
+                  <input 
+                    type="email" 
+                    name="email" 
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '15px',
+                      background: 'rgba(20,40,70,0.6)',
+                      border: '1px solid rgba(100,150,200,0.3)',
+                      borderRadius: '8px',
+                      color: '#e0f0ff',
+                      fontFamily: 'IBM Plex Sans, sans-serif',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+                
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '8px', 
+                    fontWeight: 500,
+                    color: '#a0c8e8',
+                    fontSize: '14px'
+                  }}>
+                    Message:
+                  </label>
+                  <textarea 
+                    name="message" 
+                    rows="5" 
+                    required
+                    placeholder="Describe your question, bug report, or suggestion..."
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '15px',
+                      background: 'rgba(20,40,70,0.6)',
+                      border: '1px solid rgba(100,150,200,0.3)',
+                      borderRadius: '8px',
+                      color: '#e0f0ff',
+                      fontFamily: 'IBM Plex Sans, sans-serif',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    color: 'white',
+                    background: 'linear-gradient(135deg, #3080b0, #60b0e0)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontFamily: 'IBM Plex Sans, sans-serif',
+                    boxShadow: '0 4px 12px rgba(60,176,224,0.3)'
+                  }}
+                >
+                  Send Message
+                </button>
+              </form>
+            </div>
+
             {/* Footer */}
             <div style={{ textAlign: 'center', padding: '24px', color: '#607890', fontSize: '12px', borderTop: '1px solid rgba(100,150,200,0.1)' }}>
-              <p style={{ margin: '0 0 8px 0' }}>This tool provides estimates based on the Boston Retirement System Group 1 formulas. Actual benefits may vary. Reduced rate (3.45%) applies if you submit by November 25, 2026.</p>
-              <p style={{ margin: 0 }}>Consult with the Boston Retirement System at <strong style={{ color: '#80a8c8' }}>retirementboard@boston.gov</strong> for official calculations.</p>
+              <p style={{ margin: 0 }}>This is an experiment subject to errors. Do not make any decisions based on its output. Consult Human Resources for official guidance.</p>
             </div>
           </div>
         </div>
