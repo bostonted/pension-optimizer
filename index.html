@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRS Pension Optimizer</title>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KP9WD9PCKQ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-KP9WD9PCKQ');
+  </script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -89,6 +97,20 @@
     .empty-row input::placeholder {
       color: #506880;
     }
+
+    select {
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2380a8c8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 30px !important;
+    }
+
+    select option {
+      background: #1a2d4a;
+      color: #e0f0ff;
+    }
   </style>
 </head>
 <body>
@@ -109,10 +131,50 @@
       63: 23.0, 64: 24.0, 65: 25.0, 66: 25.0, 67: 25.0, 68: 25.0, 69: 25.0, 70: 25.0
     };
 
-    const CURRENT_YEAR = 2026;
     const CONTRIBUTION_RATE = 0.11;
-    const REDUCED_INTEREST_RATE = 0.0345;
-    const FULL_INTEREST_RATE = 0.069;
+
+    // Official BRS cumulative interest factors to 12/31/2025
+    // Derived from 2025 BRS worksheet by applying one additional year of compounding
+    // Buyback Interest at 6.90% = annual compound rate of 3.45% (rate ÷ 2)
+    const BUYBACK_CUM_FACTORS = {
+      1977: 5.094057, 1978: 4.924172, 1979: 4.759954, 1980: 4.601212,
+      1981: 4.447764, 1982: 4.299434, 1983: 4.156050, 1984: 4.017449,
+      1985: 3.883469, 1986: 3.753957, 1987: 3.628764, 1988: 3.507747,
+      1989: 3.390766, 1990: 3.277686, 1991: 3.168377, 1992: 3.062713,
+      1993: 2.960573, 1994: 2.861840, 1995: 2.766399, 1996: 2.674141,
+      1997: 2.584960, 1998: 2.498753, 1999: 2.415421, 2000: 2.334869,
+      2001: 2.257002, 2002: 2.181732, 2003: 2.108972, 2004: 2.038639,
+      2005: 1.970652, 2006: 1.904931, 2007: 1.841403, 2008: 1.779994,
+      2009: 1.720632, 2010: 1.663249, 2011: 1.607782, 2012: 1.554162,
+      2013: 1.502332, 2014: 1.452230, 2015: 1.403799, 2016: 1.356984,
+      2017: 1.311728, 2018: 1.267984, 2019: 1.225696, 2020: 1.184820,
+      2021: 1.145307, 2022: 1.107112, 2023: 1.070190, 2024: 1.034500,
+      2025: 1.000000
+    };
+
+    // Actuarial Interest at 6.90% = annual compound rate of 6.90% (full rate)
+    const ACTUARIAL_CUM_FACTORS = {
+      1977: 24.599702, 1978: 23.011882, 1979: 21.526550, 1980: 20.137091,
+      1981: 18.837316, 1982: 17.621437, 1983: 16.484039, 1984: 15.420055,
+      1985: 14.424747, 1986: 13.493683, 1987: 12.622716, 1988: 11.807966,
+      1989: 11.045805, 1990: 10.332840, 1991: 9.665893, 1992: 9.041995,
+      1993: 8.458367, 1994: 7.912412, 1995: 7.401694, 1996: 6.923943,
+      1997: 6.477027, 1998: 6.058959, 1999: 5.667875, 2000: 5.302036,
+      2001: 4.959808, 2002: 4.639672, 2003: 4.340198, 2004: 4.060055,
+      2005: 3.797992, 2006: 3.552846, 2007: 3.323523, 2008: 3.109002,
+      2009: 2.908328, 2010: 2.720606, 2011: 2.545000, 2012: 2.380730,
+      2013: 2.227063, 2014: 2.083314, 2015: 1.948844, 2016: 1.823053,
+      2017: 1.705382, 2018: 1.595306, 2019: 1.492335, 2020: 1.396010,
+      2021: 1.305903, 2022: 1.221612, 2023: 1.142761, 2024: 1.069000,
+      2025: 1.000000
+    };
+
+    // Monthly interest rates for partial-year 2026 calculation
+    const BUYBACK_MONTHLY_RATE = 0.002875;   // 6.90% / 200 / 12
+    const ACTUARIAL_MONTHLY_RATE = 0.005750;  // 6.90% / 100 / 12
+
+    const MONTH_NAMES = ['January','February','March','April','May','June',
+      'July','August','September','October','November','December'];
 
     function App() {
       const [inputs, setInputs] = useState({
@@ -127,6 +189,8 @@
       
       const [edicYears, setEdicYears] = useState([]);
       const [entryMode, setEntryMode] = useState('manual');
+      const [repaymentMonth, setRepaymentMonth] = useState(new Date().getMonth() + 1);
+      const [repaymentYear] = useState(2026);
       
       const [quickFill, setQuickFill] = useState({
         startYear: 2020,
@@ -210,15 +274,30 @@
 
         edicYears.forEach(({ year, salary }) => {
           const contribution = salary * CONTRIBUTION_RATE;
-          const yearsOfInterest = CURRENT_YEAR - year;
           
-          const amountReduced = contribution * Math.pow(1 + REDUCED_INTEREST_RATE, yearsOfInterest);
-          const amountFull = contribution * Math.pow(1 + FULL_INTEREST_RATE, yearsOfInterest);
+          // Official BRS worksheet method:
+          // 1. contribution × cumulative factor = balance at 12/31/2025
+          // 2. balance × (month × monthly rate) = partial 2026 interest
+          // 3. total = balance + partial year interest
+          
+          const cumFactorReduced = BUYBACK_CUM_FACTORS[year] || Math.pow(1.0345, 2025 - year);
+          const bal2025Reduced = contribution * cumFactorReduced;
+          const partialReduced = bal2025Reduced * (repaymentMonth * BUYBACK_MONTHLY_RATE);
+          const amountReduced = bal2025Reduced + partialReduced;
+          
+          const cumFactorFull = ACTUARIAL_CUM_FACTORS[year] || Math.pow(1.069, 2025 - year);
+          const bal2025Full = contribution * cumFactorFull;
+          const partialFull = bal2025Full * (repaymentMonth * ACTUARIAL_MONTHLY_RATE);
+          const amountFull = bal2025Full + partialFull;
           
           totalReducedRate += amountReduced;
           totalFullRate += amountFull;
           
-          breakdown.push({ year, salary, contribution, yearsOfInterest, amountReduced, amountFull });
+          breakdown.push({ 
+            year, salary, contribution,
+            cumFactorReduced, bal2025Reduced, amountReduced,
+            cumFactorFull, bal2025Full, amountFull
+          });
         });
 
         return {
@@ -228,7 +307,7 @@
           totalYears: edicYears.length,
           savings: totalFullRate - totalReducedRate
         };
-      }, [edicYears]);
+      }, [edicYears, repaymentMonth]);
 
       const calculations = useMemo(() => {
         const { currentAge, brsJoinDate, currentCityServiceYears, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
@@ -432,15 +511,16 @@
           // Buyback Cost Summary
           doc.setFontSize(12);
           doc.setTextColor(40, 80, 120);
-          doc.text('Buyback Cost Summary', 14, y);
+          doc.text('Buyback Cost Estimate', 14, y);
           y += 6;
           doc.setFontSize(10);
           doc.setTextColor(60, 60, 60);
           doc.text(`Total Years: ${buybackCalculation.totalYears}`, 14, y);
+          doc.text(`Repayment: ${MONTH_NAMES[repaymentMonth - 1]} ${repaymentYear}`, 105, y);
           y += 5;
-          doc.text(`Cost at 3.45% (Reduced Rate): ${formatCurrencyFull(buybackCalculation.totalReducedRate)}`, 14, y);
+          doc.text(`Cost at 3.45% (Buyback Interest): ${formatCurrencyFull(buybackCalculation.totalReducedRate)}`, 14, y);
           y += 5;
-          doc.text(`Cost at 6.9% (Full Rate): ${formatCurrencyFull(buybackCalculation.totalFullRate)}`, 14, y);
+          doc.text(`Cost at 6.9% (Actuarial Interest): ${formatCurrencyFull(buybackCalculation.totalFullRate)}`, 14, y);
           y += 5;
           doc.setTextColor(40, 120, 40);
           doc.text(`Savings with Reduced Rate: ${formatCurrencyFull(buybackCalculation.savings)}`, 14, y);
@@ -639,8 +719,48 @@
 
               {edicYears.length > 0 && (
                 <div style={{ marginTop: '24px', padding: '20px', background: 'rgba(40,80,120,0.4)', borderRadius: '12px', border: '1px solid rgba(100,180,240,0.3)' }}>
-                  <h3 style={{ margin: '0 0 16px 0', color: '#c0daf0', fontSize: '16px' }}>Buyback Cost Summary</h3>
+                  <h3 style={{ margin: '0 0 16px 0', color: '#c0daf0', fontSize: '16px' }}>Buyback Cost Estimate</h3>
                   
+                  <div style={{ 
+                    display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap',
+                    marginBottom: '20px', padding: '16px', 
+                    background: 'rgba(20,40,70,0.5)', borderRadius: '10px',
+                    border: '1px solid rgba(100,150,200,0.2)'
+                  }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', color: '#90b8d8', fontSize: '12px', fontWeight: '500' }}>
+                        Planned lump-sum payment month
+                      </label>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <select 
+                          value={repaymentMonth} 
+                          onChange={(e) => setRepaymentMonth(parseInt(e.target.value))}
+                          style={{
+                            background: 'rgba(20,40,70,0.8)',
+                            border: '1px solid rgba(100,150,200,0.3)',
+                            borderRadius: '8px',
+                            padding: '8px 12px',
+                            color: '#e0f0ff',
+                            fontFamily: "'IBM Plex Sans', sans-serif",
+                            fontSize: '14px',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                        </select>
+                        <span style={{ 
+                          padding: '8px 12px', color: '#a0c4e8', fontSize: '14px',
+                          background: 'rgba(20,40,70,0.8)', borderRadius: '8px',
+                          border: '1px solid rgba(100,150,200,0.2)'
+                        }}>2026</span>
+                      </div>
+                    </div>
+                    <div style={{ color: '#607890', fontSize: '12px', lineHeight: '1.4', maxWidth: '320px' }}>
+                      Interest accrues monthly — paying earlier in the year saves money. Uses official BRS cumulative factor tables.
+                    </div>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years of Service</div>
@@ -649,17 +769,17 @@
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 3.45%</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.totalReducedRate)}</div>
-                      <div style={{ color: '#60a080', fontSize: '11px' }}>Reduced rate (apply by Nov 2026)</div>
+                      <div style={{ color: '#60a080', fontSize: '11px' }}>Buyback interest (apply by Nov 2026)</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Cost at 6.9%</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#f0a060' }}>{formatCurrencyFull(buybackCalculation.totalFullRate)}</div>
-                      <div style={{ color: '#a08060', fontSize: '11px' }}>Full rate</div>
+                      <div style={{ color: '#a08060', fontSize: '11px' }}>Actuarial interest</div>
                     </div>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>You Save</div>
                       <div style={{ ...styles.statValue, fontSize: '28px', color: '#60d080' }}>{formatCurrencyFull(buybackCalculation.savings)}</div>
-                      <div style={{ color: '#60a080', fontSize: '11px' }}>With reduced rate</div>
+                      <div style={{ color: '#60a080', fontSize: '11px' }}>With buyback interest rate</div>
                     </div>
                   </div>
 
@@ -671,7 +791,7 @@
                           <th style={{ padding: '8px', textAlign: 'left', color: '#80a8c8' }}>Year</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Salary</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>11%</th>
-                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Yrs Int.</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Factor</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 3.45%</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 6.9%</th>
                         </tr>
@@ -682,13 +802,16 @@
                             <td style={{ padding: '8px' }}>{row.year}</td>
                             <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue }}>{formatCurrencyFull(row.salary)}</td>
                             <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue }}>{formatCurrencyFull(row.contribution)}</td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>{row.yearsOfInterest}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', color: '#90b8d8', fontSize: '12px' }}>{row.cumFactorReduced.toFixed(4)}</td>
                             <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue, color: '#60d080' }}>{formatCurrencyFull(row.amountReduced)}</td>
                             <td style={{ padding: '8px', textAlign: 'right', ...styles.statValue, color: '#f0a060' }}>{formatCurrencyFull(row.amountFull)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    <p style={{ color: '#607890', fontSize: '11px', margin: '8px 0 0 0' }}>
+                      Factor = BRS cumulative interest to 12/31/2025. Totals include {MONTH_NAMES[repaymentMonth - 1]} 2026 partial-year interest.
+                    </p>
                   </details>
                 </div>
               )}
@@ -826,14 +949,10 @@
                   <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '16px' }}>Buyback Investment</div>
                   <div style={{ ...styles.statValue, fontSize: '42px', color: '#f0c060', marginBottom: '8px' }}>{formatCurrency(calculations.bestBuybackROI.buybackCost)}</div>
                   <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>Cost at 3.45% rate</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
+                  <div style={{ paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Lifetime ROI</div>
                       <div style={{ ...styles.statValue, fontSize: '18px', color: calculations.bestBuybackROI.roi > 0 ? '#60d060' : '#e06060' }}>{formatPercent(calculations.bestBuybackROI.roi)}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Payback Period</div>
-                      <div style={{ ...styles.statValue, fontSize: '18px', color: '#a0d0f0' }}>{calculations.bestBuybackROI.paybackYears < 100 ? `${calculations.bestBuybackROI.paybackYears.toFixed(1)} yrs` : 'N/A'}</div>
                     </div>
                   </div>
                 </div>
