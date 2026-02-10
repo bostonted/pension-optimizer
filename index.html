@@ -180,7 +180,6 @@
       const [inputs, setInputs] = useState({
         currentAge: 45,
         brsJoinDate: 'post-2012',
-        currentCityServiceYears: 1.5,
         expectedFinalSalary: 120000,
         salaryGrowthRate: 2.5,
         lifeExpectancy: 85,
@@ -310,8 +309,9 @@
       }, [edicYears, repaymentMonth]);
 
       const calculations = useMemo(() => {
-        const { currentAge, brsJoinDate, currentCityServiceYears, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
+        const { currentAge, brsJoinDate, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
         const edicServiceYears = edicYears.length;
+        const currentCityServiceYears = edicYears.length;
         const table = brsJoinDate === 'post-2012' ? GROUP1_TABLE_POST_2012 : GROUP1_TABLE_PRE_2012;
         const minRetirementAge = brsJoinDate === 'post-2012' ? 60 : 55;
         const avgYears = brsJoinDate === 'post-2012' ? 5 : 3;
@@ -444,154 +444,444 @@
 
       const generatePDF = () => {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
+        const doc = new jsPDF('landscape');
         const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 14;
         let y = 20;
 
-        // Title
-        doc.setFontSize(20);
-        doc.setTextColor(40, 80, 120);
-        doc.text('Boston Retirement System', pageWidth / 2, y, { align: 'center' });
-        y += 8;
-        doc.setFontSize(16);
-        doc.text('Pension Optimization Report', pageWidth / 2, y, { align: 'center' });
-        y += 6;
-        doc.setFontSize(10);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, y, { align: 'center' });
-        y += 15;
+        const checkPageBreak = (needed) => {
+          if (y + needed > pageHeight - 20) {
+            doc.addPage();
+            y = 20;
+          }
+        };
 
-        // Personal Information
-        doc.setFontSize(14);
-        doc.setTextColor(40, 80, 120);
-        doc.text('Personal Information', 14, y);
-        y += 8;
-        doc.setFontSize(10);
-        doc.setTextColor(60, 60, 60);
-        doc.text(`Current Age: ${inputs.currentAge}`, 14, y);
-        doc.text(`BRS Membership: ${inputs.brsJoinDate === 'post-2012' ? 'On/After Apr 2, 2012' : 'Before Apr 2, 2012'}`, 105, y);
-        y += 6;
-        doc.text(`Current City Service: ${inputs.currentCityServiceYears} years`, 14, y);
-        doc.text(`Current Salary: ${formatCurrencyFull(inputs.expectedFinalSalary)}`, 105, y);
-        y += 6;
-        doc.text(`Expected Salary Growth: ${inputs.salaryGrowthRate}%`, 14, y);
-        doc.text(`Life Expectancy: ${inputs.lifeExpectancy}`, 105, y);
-        y += 6;
-        if (inputs.departureAge) {
-          doc.text(`Planned Departure Age: ${inputs.departureAge}`, 14, y);
-          y += 6;
-        }
-        y += 8;
-
-        // EDIC Service History
-        if (edicYears.length > 0) {
+        const sectionHeader = (text) => {
+          checkPageBreak(20);
           doc.setFontSize(14);
           doc.setTextColor(40, 80, 120);
-          doc.text('EDIC Service History (Buyback)', 14, y);
+          doc.text(text, margin, y);
+          y += 2;
+          doc.setDrawColor(40, 80, 120);
+          doc.setLineWidth(0.5);
+          doc.line(margin, y, pageWidth - margin, y);
           y += 8;
+        };
 
-          const edicData = edicYears.map(item => [
-            item.year.toString(),
-            formatCurrencyFull(item.salary),
-            formatCurrencyFull(item.salary * 0.11)
+        const label = (text, x, yPos) => {
+          doc.setFontSize(8);
+          doc.setTextColor(120, 140, 160);
+          doc.text(text, x, yPos);
+        };
+
+        const value = (text, x, yPos, color) => {
+          doc.setFontSize(11);
+          doc.setTextColor(...(color || [40, 60, 80]));
+          doc.text(text, x, yPos);
+        };
+
+        // ===== TITLE =====
+        doc.setFontSize(22);
+        doc.setTextColor(40, 80, 120);
+        doc.text('Boston Retirement System', pageWidth / 2, y, { align: 'center' });
+        y += 9;
+        doc.setFontSize(15);
+        doc.setTextColor(60, 100, 140);
+        doc.text('Pension Optimization Report', pageWidth / 2, y, { align: 'center' });
+        y += 6;
+        doc.setFontSize(9);
+        doc.setTextColor(130, 130, 130);
+        doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, pageWidth / 2, y, { align: 'center' });
+        y += 5;
+        doc.setFontSize(8);
+        doc.text('Group 1 • ' + (inputs.brsJoinDate === 'post-2012' ? 'Post-April 2, 2012 (5-year avg)' : 'Pre-April 2, 2012 (3-year avg)'), pageWidth / 2, y, { align: 'center' });
+        y += 12;
+
+        // ===== PERSONAL INFORMATION =====
+        sectionHeader('Personal Information');
+        const infoColWidth = (pageWidth - 2 * margin) / 3;
+        
+        const infoItems = [
+          ['Current Age', `${inputs.currentAge}`],
+          ['BRS Membership', inputs.brsJoinDate === 'post-2012' ? 'On/After Apr 2, 2012' : 'Before Apr 2, 2012'],
+          ['City Service (EDIC Years)', `${edicYears.length} years`],
+          ['Current Annual Salary', formatCurrencyFull(inputs.expectedFinalSalary)],
+          ['Expected Salary Growth', `${inputs.salaryGrowthRate}% per year`],
+          ['Life Expectancy', `${inputs.lifeExpectancy}`],
+        ];
+        if (inputs.departureAge) {
+          infoItems.push(['Planned Departure Age', `${inputs.departureAge}`]);
+        }
+
+        infoItems.forEach((item, i) => {
+          const col = i % 3;
+          const x = margin + col * infoColWidth;
+          if (i > 0 && col === 0) y += 14;
+          label(item[0], x, y);
+          value(item[1], x, y + 5);
+        });
+        y += 20;
+
+        // ===== EARLY DEPARTURE NOTICE =====
+        if (calculations.willDepart) {
+          checkPageBreak(20);
+          doc.setFillColor(255, 245, 220);
+          doc.roundedRect(margin, y - 4, pageWidth - 2 * margin, 16, 3, 3, 'F');
+          doc.setFontSize(10);
+          doc.setTextColor(160, 100, 20);
+          doc.text(`Early Departure at Age ${calculations.departureAge}`, margin + 6, y + 3);
+          doc.setFontSize(9);
+          doc.setTextColor(140, 110, 60);
+          doc.text(`Service freezes at ${calculations.frozenServiceYears?.toFixed(1)} years  •  Salary freezes at ${formatCurrency(calculations.frozenAvgSalary)} avg  •  Pension starts at age ${calculations.minRetirementAge}`, margin + 6, y + 9);
+          y += 18;
+        }
+
+        // ===== EDIC SERVICE HISTORY + BUYBACK BREAKDOWN =====
+        if (edicYears.length > 0) {
+          sectionHeader('EDIC Service History & Buyback Cost Breakdown');
+
+          // Full year-by-year breakdown table (mirrors the website's expandable detail)
+          const breakdownData = buybackCalculation.breakdown.map(row => [
+            row.year.toString(),
+            formatCurrencyFull(row.salary),
+            formatCurrencyFull(row.contribution),
+            row.cumFactorReduced.toFixed(4),
+            formatCurrencyFull(row.bal2025Reduced),
+            formatCurrencyFull(row.amountReduced),
+            row.cumFactorFull.toFixed(4),
+            formatCurrencyFull(row.bal2025Full),
+            formatCurrencyFull(row.amountFull)
           ]);
 
           doc.autoTable({
             startY: y,
-            head: [['Year', 'Salary', '11% Contribution']],
-            body: edicData,
+            head: [['Year', 'Salary', '11% Contrib', 'Factor (3.45%)', 'Bal 12/31/25', 'Total @ 3.45%', 'Factor (6.9%)', 'Bal 12/31/25', 'Total @ 6.9%']],
+            body: breakdownData,
             theme: 'striped',
-            headStyles: { fillColor: [40, 80, 120] },
-            margin: { left: 14, right: 14 },
-            tableWidth: 80
+            headStyles: { fillColor: [40, 80, 120], fontSize: 7.5, cellPadding: 3 },
+            bodyStyles: { fontSize: 8, cellPadding: 2.5 },
+            columnStyles: {
+              0: { halign: 'center' },
+              1: { halign: 'right' },
+              2: { halign: 'right' },
+              3: { halign: 'center', textColor: [100, 140, 180] },
+              4: { halign: 'right' },
+              5: { halign: 'right', textColor: [40, 140, 80] },
+              6: { halign: 'center', textColor: [100, 140, 180] },
+              7: { halign: 'right' },
+              8: { halign: 'right', textColor: [200, 130, 60] }
+            },
+            margin: { left: margin, right: margin },
+            alternateRowStyles: { fillColor: [240, 246, 252] }
           });
 
-          y = doc.lastAutoTable.finalY + 10;
+          y = doc.lastAutoTable.finalY + 8;
 
-          // Buyback Cost Summary
-          doc.setFontSize(12);
-          doc.setTextColor(40, 80, 120);
-          doc.text('Buyback Cost Estimate', 14, y);
-          y += 6;
-          doc.setFontSize(10);
-          doc.setTextColor(60, 60, 60);
-          doc.text(`Total Years: ${buybackCalculation.totalYears}`, 14, y);
-          doc.text(`Repayment: ${MONTH_NAMES[repaymentMonth - 1]} ${repaymentYear}`, 105, y);
-          y += 5;
-          doc.text(`Cost at 3.45% (Buyback Interest): ${formatCurrencyFull(buybackCalculation.totalReducedRate)}`, 14, y);
-          y += 5;
-          doc.text(`Cost at 6.9% (Actuarial Interest): ${formatCurrencyFull(buybackCalculation.totalFullRate)}`, 14, y);
-          y += 5;
-          doc.setTextColor(40, 120, 40);
-          doc.text(`Savings with Reduced Rate: ${formatCurrencyFull(buybackCalculation.savings)}`, 14, y);
-          y += 12;
+          // Buyback Cost Summary Box
+          checkPageBreak(30);
+          doc.setFillColor(235, 245, 255);
+          doc.roundedRect(margin, y - 2, pageWidth - 2 * margin, 28, 3, 3, 'F');
+          doc.setDrawColor(40, 80, 120);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(margin, y - 2, pageWidth - 2 * margin, 28, 3, 3, 'S');
+
+          const summaryCol = (pageWidth - 2 * margin) / 4;
+          
+          label('TOTAL YEARS', margin + 6, y + 3);
+          doc.setFontSize(16);
+          doc.setTextColor(40, 60, 80);
+          doc.text(`${buybackCalculation.totalYears}`, margin + 6, y + 12);
+
+          label('COST AT 3.45% (BUYBACK INTEREST)', margin + 6 + summaryCol, y + 3);
+          doc.setFontSize(16);
+          doc.setTextColor(40, 160, 80);
+          doc.text(formatCurrencyFull(buybackCalculation.totalReducedRate), margin + 6 + summaryCol, y + 12);
+          doc.setFontSize(7);
+          doc.setTextColor(100, 140, 100);
+          doc.text('Apply by Nov 2026 for this rate', margin + 6 + summaryCol, y + 17);
+
+          label('COST AT 6.9% (ACTUARIAL INTEREST)', margin + 6 + summaryCol * 2, y + 3);
+          doc.setFontSize(16);
+          doc.setTextColor(200, 130, 60);
+          doc.text(formatCurrencyFull(buybackCalculation.totalFullRate), margin + 6 + summaryCol * 2, y + 12);
+
+          label('YOU SAVE WITH BUYBACK RATE', margin + 6 + summaryCol * 3, y + 3);
+          doc.setFontSize(16);
+          doc.setTextColor(40, 160, 80);
+          doc.text(formatCurrencyFull(buybackCalculation.savings), margin + 6 + summaryCol * 3, y + 12);
+
+          doc.setFontSize(7);
+          doc.setTextColor(130, 130, 130);
+          doc.text(`Repayment: ${MONTH_NAMES[repaymentMonth - 1]} ${repaymentYear}  •  Interest factors from official BRS cumulative tables to 12/31/2025 + partial ${repaymentYear}`, margin + 6, y + 23);
+          
+          y += 34;
         }
 
-        // Recommendation
+        // ===== KEY INSIGHTS =====
+        doc.addPage();
+        y = 20;
+        sectionHeader('Key Insights');
+
+        const cardWidth = (pageWidth - 2 * margin - 16) / 3;
+        const cardHeight = 44;
+        const cardY = y;
+
+        // Card 1: Best with Buyback
         if (calculations.optimalWithBuyback) {
-          doc.setFontSize(14);
-          doc.setTextColor(40, 80, 120);
-          doc.text('Recommended Strategy', 14, y);
-          y += 8;
+          const s = calculations.optimalWithBuyback;
+          const cx = margin;
+          doc.setFillColor(230, 245, 255);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'F');
+          doc.setDrawColor(40, 120, 180);
+          doc.setLineWidth(0.5);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'S');
+          
+          doc.setFontSize(8);
+          doc.setTextColor(40, 120, 180);
+          doc.text('BEST WITH BUYBACK — RECOMMENDED', cx + 5, cardY + 7);
+          doc.setFontSize(22);
+          doc.setTextColor(30, 70, 110);
+          doc.text(`Age ${s.retireAge}`, cx + 5, cardY + 19);
+          doc.setFontSize(8);
+          doc.setTextColor(80, 120, 160);
+          doc.text(`${s.serviceWithBuyback.toFixed(1)} yrs service  •  ${formatPercent(s.percentWith)} of salary`, cx + 5, cardY + 25);
+          
+          doc.setFontSize(7);
+          doc.setTextColor(100, 130, 160);
+          doc.text('Annual Pension', cx + 5, cardY + 32);
+          doc.text('Lifetime Total', cx + cardWidth / 2, cardY + 32);
           doc.setFontSize(11);
-          doc.setTextColor(40, 120, 40);
-          doc.text(`Optimal Retirement Age: ${calculations.optimalWithBuyback.retireAge} (with buyback)`, 14, y);
-          y += 6;
-          doc.setFontSize(10);
-          doc.setTextColor(60, 60, 60);
-          doc.text(`Total Service: ${calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} years`, 14, y);
-          doc.text(`Benefit Percentage: ${formatPercent(calculations.optimalWithBuyback.percentWith)}`, 105, y);
-          y += 5;
-          doc.text(`Annual Pension: ${formatCurrencyFull(calculations.optimalWithBuyback.annualPensionWith)}`, 14, y);
-          doc.text(`Lifetime Total: ${formatCurrencyFull(calculations.optimalWithBuyback.lifetimeBenefitWith)}`, 105, y);
-          y += 12;
+          doc.setTextColor(40, 160, 60);
+          doc.text(formatCurrency(s.annualPensionWith), cx + 5, cardY + 39);
+          doc.text(formatCurrency(s.lifetimeBenefitWith), cx + cardWidth / 2, cardY + 39);
         }
 
-        // Check if we need a new page
-        if (y > 200) {
-          doc.addPage();
-          y = 20;
+        // Card 2: Buyback Investment
+        if (calculations.bestBuybackROI && edicYears.length > 0) {
+          const s = calculations.bestBuybackROI;
+          const cx = margin + cardWidth + 8;
+          doc.setFillColor(255, 248, 235);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'F');
+          doc.setDrawColor(180, 140, 60);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'S');
+          
+          doc.setFontSize(8);
+          doc.setTextColor(160, 120, 40);
+          doc.text('BUYBACK INVESTMENT', cx + 5, cardY + 7);
+          doc.setFontSize(22);
+          doc.setTextColor(180, 130, 40);
+          doc.text(formatCurrency(s.buybackCost), cx + 5, cardY + 19);
+          doc.setFontSize(8);
+          doc.setTextColor(140, 110, 60);
+          doc.text('Cost at 3.45% rate', cx + 5, cardY + 25);
+          
+          doc.setFontSize(7);
+          doc.setTextColor(100, 130, 160);
+          doc.text('Lifetime ROI', cx + 5, cardY + 32);
+          doc.text('Payback Period', cx + cardWidth / 2, cardY + 32);
+          doc.setFontSize(11);
+          doc.setTextColor(s.roi > 0 ? [40, 160, 60] : [200, 60, 60]);
+          doc.text(formatPercent(s.roi), cx + 5, cardY + 39);
+          doc.setTextColor(80, 100, 130);
+          doc.text(s.paybackYears < 100 ? `${s.paybackYears.toFixed(1)} years` : 'N/A', cx + cardWidth / 2, cardY + 39);
         }
 
-        // All Scenarios Table
-        doc.setFontSize(14);
-        doc.setTextColor(40, 80, 120);
-        doc.text('All Retirement Scenarios', 14, y);
-        y += 8;
+        // Card 3: Without Buyback
+        if (calculations.optimalWithoutBuyback) {
+          const s = calculations.optimalWithoutBuyback;
+          const cx = margin + (cardWidth + 8) * 2;
+          doc.setFillColor(240, 244, 248);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'F');
+          doc.setDrawColor(140, 160, 180);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(cx, cardY, cardWidth, cardHeight, 3, 3, 'S');
+          
+          doc.setFontSize(8);
+          doc.setTextColor(100, 130, 160);
+          doc.text('WITHOUT BUYBACK', cx + 5, cardY + 7);
+          doc.setFontSize(22);
+          doc.setTextColor(80, 110, 140);
+          doc.text(`Age ${s.retireAge}`, cx + 5, cardY + 19);
+          doc.setFontSize(8);
+          doc.setTextColor(100, 130, 160);
+          doc.text(`${s.serviceAtRetirement.toFixed(1)} yrs service  •  ${formatPercent(s.percentWithout)} of salary`, cx + 5, cardY + 25);
+          
+          doc.setFontSize(7);
+          doc.setTextColor(100, 130, 160);
+          doc.text('Annual Pension', cx + 5, cardY + 32);
+          doc.text('Lifetime Total', cx + cardWidth / 2, cardY + 32);
+          doc.setFontSize(11);
+          doc.setTextColor(80, 140, 180);
+          doc.text(formatCurrency(s.annualPensionWithout), cx + 5, cardY + 39);
+          doc.text(formatCurrency(s.lifetimeBenefitWithout), cx + cardWidth / 2, cardY + 39);
+        }
+
+        y = cardY + cardHeight + 16;
+
+        // ===== ALL RETIREMENT SCENARIOS (full table matching website) =====
+        sectionHeader('All Retirement Scenarios');
 
         const eligibleScenarios = calculations.scenarios.filter(s => !s.notEligible && !s.alreadyPast);
-        const scenarioData = eligibleScenarios.map(s => [
+        const scenarioData = eligibleScenarios.map(s => {
+          const isOptimal = calculations.optimalWithBuyback?.retireAge === s.retireAge;
+          let status = '';
+          if (s.buybackWasted) status = 'BB WASTED';
+          else if (s.hitsMaxWith) status = 'MAX 80%';
+          else if (isOptimal) status = '★ BEST';
+
+          return [
+            s.retireAge.toString() + (isOptimal ? ' ★' : ''),
+            s.serviceAtRetirement.toFixed(1),
+            s.serviceWithBuyback.toFixed(1),
+            formatCurrency(s.avgSalaryWithout),
+            formatCurrency(s.avgSalaryWith),
+            formatPercent(s.percentWithout) + (s.hitsMaxWithout ? ' ★' : ''),
+            formatPercent(s.percentWith) + (s.hitsMaxWith ? ' ★' : ''),
+            formatCurrency(s.annualPensionWithout),
+            formatCurrency(s.annualPensionWith),
+            status
+          ];
+        });
+
+        doc.autoTable({
+          startY: y,
+          head: [['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', 'Avg w/ BB', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status']],
+          body: scenarioData,
+          theme: 'striped',
+          headStyles: { fillColor: [40, 80, 120], fontSize: 7.5, cellPadding: 3 },
+          bodyStyles: { fontSize: 8, cellPadding: 2.5 },
+          columnStyles: {
+            0: { fontStyle: 'bold' },
+            4: { textColor: [40, 140, 180] },
+            6: { textColor: [40, 140, 180] },
+            8: { textColor: [40, 160, 80] },
+            9: { halign: 'center', fontSize: 7 }
+          },
+          margin: { left: margin, right: margin },
+          alternateRowStyles: { fillColor: [240, 246, 252] },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 9) {
+              const val = data.cell.raw;
+              if (val === 'BB WASTED') data.cell.styles.textColor = [200, 100, 40];
+              else if (val === 'MAX 80%') data.cell.styles.textColor = [40, 100, 200];
+              else if (val === '★ BEST') data.cell.styles.textColor = [40, 160, 60];
+            }
+            // Highlight the optimal row
+            if (data.section === 'body' && calculations.optimalWithBuyback) {
+              const rowAge = parseInt(scenarioData[data.row.index]?.[0]);
+              if (rowAge === calculations.optimalWithBuyback.retireAge) {
+                data.cell.styles.fillColor = [220, 245, 230];
+              }
+            }
+          }
+        });
+
+        y = doc.lastAutoTable.finalY + 4;
+        doc.setFontSize(7);
+        doc.setTextColor(130, 130, 130);
+        doc.text('★ = Hits 80% max  •  BB = Buyback  •  Highlighted row = recommended scenario', margin, y);
+        y += 10;
+
+        // ===== DETAILED ANALYSIS FOR EACH ELIGIBLE SCENARIO =====
+        doc.addPage();
+        y = 20;
+        sectionHeader('Detailed Scenario Analysis');
+
+        const detailData = eligibleScenarios.map(s => [
           s.retireAge.toString(),
-          s.serviceAtRetirement.toFixed(1),
-          s.serviceWithBuyback.toFixed(1),
+          `${s.yearsUntilRetirement}`,
+          `${s.yearsCollecting}`,
+          formatCurrency(s.avgSalaryWithout),
           formatCurrency(s.avgSalaryWith),
-          formatPercent(s.percentWith),
-          formatCurrency(s.annualPensionWithout),
-          formatCurrency(s.annualPensionWith)
+          formatCurrencyFull(s.buybackCost),
+          formatCurrencyFull(s.buybackCostFull),
+          s.annualBenefit > 0 ? `+${formatCurrency(s.annualBenefit)}/yr` : '$0/yr',
+          formatCurrency(s.lifetimeGain),
+          formatCurrency(s.netLifetimeGain),
+          s.buybackWasted ? 'WASTED' : (s.roi > 0 ? formatPercent(s.roi) : '—')
         ]);
 
         doc.autoTable({
           startY: y,
-          head: [['Age', 'Service', 'w/ BB', 'Avg Salary', '% w/ BB', 'Annual (No BB)', 'Annual (w/ BB)']],
-          body: scenarioData,
+          head: [[
+            'Age', 'Yrs to Retire', 'Yrs Collecting',
+            `Best ${calculations.avgYears}yr Avg`, `Best ${calculations.avgYears}yr w/BB`,
+            'BB Cost (3.45%)', 'BB Cost (6.9%)',
+            'Annual from BB', 'Lifetime Gain', 'Net Gain', 'ROI'
+          ]],
+          body: detailData,
           theme: 'striped',
-          headStyles: { fillColor: [40, 80, 120], fontSize: 8 },
-          bodyStyles: { fontSize: 8 },
-          margin: { left: 14, right: 14 }
+          headStyles: { fillColor: [40, 80, 120], fontSize: 6.5, cellPadding: 2.5 },
+          bodyStyles: { fontSize: 7, cellPadding: 2 },
+          columnStyles: {
+            0: { fontStyle: 'bold', halign: 'center' },
+            1: { halign: 'center' },
+            2: { halign: 'center' },
+            5: { textColor: [40, 160, 80] },
+            6: { textColor: [200, 130, 60] },
+            7: { textColor: [40, 140, 80] },
+            10: { halign: 'center' }
+          },
+          margin: { left: margin, right: margin },
+          alternateRowStyles: { fillColor: [240, 246, 252] },
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+              // Color net gain red if negative
+              if (data.column.index === 9) {
+                const raw = data.cell.raw;
+                if (raw.includes('-') || raw === '$0') data.cell.styles.textColor = [200, 60, 60];
+                else data.cell.styles.textColor = [40, 160, 80];
+              }
+              // Color ROI
+              if (data.column.index === 10) {
+                const raw = data.cell.raw;
+                if (raw === 'WASTED') data.cell.styles.textColor = [200, 100, 40];
+                else if (raw === '—') data.cell.styles.textColor = [150, 150, 150];
+                else data.cell.styles.textColor = [40, 160, 80];
+              }
+              // Highlight optimal row
+              if (calculations.optimalWithBuyback) {
+                const rowAge = parseInt(detailData[data.row.index]?.[0]);
+                if (rowAge === calculations.optimalWithBuyback.retireAge) {
+                  data.cell.styles.fillColor = [220, 245, 230];
+                }
+              }
+            }
+          }
         });
 
-        // Footer
+        y = doc.lastAutoTable.finalY + 6;
+        checkPageBreak(16);
+
+        // Buyback warning note
+        const wastedScenarios = eligibleScenarios.filter(s => s.buybackWasted);
+        if (wastedScenarios.length > 0) {
+          doc.setFillColor(255, 245, 230);
+          doc.roundedRect(margin, y - 2, pageWidth - 2 * margin, 12, 2, 2, 'F');
+          doc.setFontSize(8);
+          doc.setTextColor(180, 100, 30);
+          doc.text(
+            `Buyback Warning: At age(s) ${wastedScenarios.map(s => s.retireAge).join(', ')}, you would already hit the 80% max without buyback. Buying back EDIC service would not increase your pension at those ages.`,
+            margin + 4, y + 4
+          );
+          y += 16;
+        }
+
+        // ===== FOOTER ON ALL PAGES =====
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
           doc.setPage(i);
-          doc.setFontSize(8);
-          doc.setTextColor(150, 150, 150);
+          doc.setFontSize(7);
+          doc.setTextColor(170, 170, 170);
           doc.text(
             'This is an experiment subject to errors. Do not make any decisions based on its output. Consult Human Resources for official guidance.',
             pageWidth / 2,
-            doc.internal.pageSize.getHeight() - 10,
+            pageHeight - 8,
             { align: 'center' }
           );
+          doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
         }
 
         doc.save('pension-optimization-report.pdf');
@@ -838,14 +1128,6 @@
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'post-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'post-2012')}>On/After Apr 2, 2012</button>
                     <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'pre-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'pre-2012')}>Before Apr 2, 2012</button>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Current City Service (Years in BRS)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input type="range" min="0" max="30" step="0.5" value={inputs.currentCityServiceYears} onChange={(e) => handleInputChange('currentCityServiceYears', parseFloat(e.target.value))} style={{ flex: 1 }} />
-                    <span style={{ ...styles.statValue, minWidth: '50px', textAlign: 'right', fontSize: '20px', color: '#e0f0ff' }}>{inputs.currentCityServiceYears}</span>
                   </div>
                 </div>
 
