@@ -124,14 +124,11 @@
       68: 2.5, 69: 2.5, 70: 2.5, 71: 2.5, 72: 2.5, 73: 2.5, 74: 2.5
     };
 
-    const GROUP1_TABLE_PRE_2012 = {
-      41: 1.0, 42: 2.0, 43: 3.0, 44: 4.0, 45: 5.0, 46: 6.0, 47: 7.0, 48: 8.0,
-      49: 9.0, 50: 10.0, 51: 11.0, 52: 12.0, 53: 13.0, 54: 14.0, 55: 15.0,
-      56: 16.0, 57: 17.0, 58: 18.0, 59: 19.0, 60: 20.0, 61: 21.0, 62: 22.0,
-      63: 23.0, 64: 24.0, 65: 25.0, 66: 25.0, 67: 25.0, 68: 25.0, 69: 25.0, 70: 25.0
-    };
 
-    const CONTRIBUTION_RATE = 0.11;
+
+    // BRS contribution: 9% of salary + 2% of salary over $30,000
+    const CONTRIBUTION_THRESHOLD = 30000;
+    const calcContribution = (salary) => 0.09 * salary + 0.02 * Math.max(0, salary - CONTRIBUTION_THRESHOLD);
 
     // Official BRS cumulative interest factors to 12/31/2025
     // Derived from 2025 BRS worksheet by applying one additional year of compounding
@@ -179,7 +176,6 @@
     function App() {
       const [inputs, setInputs] = useState({
         currentAge: 45,
-        brsJoinDate: 'post-2012',
         expectedFinalSalary: 120000,
         salaryGrowthRate: 2.5,
         lifeExpectancy: 85,
@@ -272,7 +268,7 @@
         const breakdown = [];
 
         edicYears.forEach(({ year, salary }) => {
-          const contribution = salary * CONTRIBUTION_RATE;
+          const contribution = calcContribution(salary);
           
           // Official BRS worksheet method:
           // 1. contribution × cumulative factor = balance at 12/31/2025
@@ -309,12 +305,12 @@
       }, [edicYears, repaymentMonth]);
 
       const calculations = useMemo(() => {
-        const { currentAge, brsJoinDate, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
+        const { currentAge, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
         const edicServiceYears = edicYears.length;
         const currentCityServiceYears = edicYears.length;
-        const table = brsJoinDate === 'post-2012' ? GROUP1_TABLE_POST_2012 : GROUP1_TABLE_PRE_2012;
-        const minRetirementAge = brsJoinDate === 'post-2012' ? 60 : 55;
-        const avgYears = brsJoinDate === 'post-2012' ? 5 : 3;
+        const table = GROUP1_TABLE_POST_2012;
+        const minRetirementAge = 60;
+        const avgYears = 5;
         const MAX_BENEFIT_PERCENT = 80;
         
         // If departure age is set, service and salary freeze at that point
@@ -495,7 +491,7 @@
         doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, pageWidth / 2, y, { align: 'center' });
         y += 5;
         doc.setFontSize(8);
-        doc.text('Group 1 • ' + (inputs.brsJoinDate === 'post-2012' ? 'Post-April 2, 2012 (5-year avg)' : 'Pre-April 2, 2012 (3-year avg)'), pageWidth / 2, y, { align: 'center' });
+        doc.text('Group 1 • Post-April 2, 2012 (5-year avg)', pageWidth / 2, y, { align: 'center' });
         y += 12;
 
         // ===== PERSONAL INFORMATION =====
@@ -504,7 +500,6 @@
         
         const infoItems = [
           ['Current Age', `${inputs.currentAge}`],
-          ['BRS Membership', inputs.brsJoinDate === 'post-2012' ? 'On/After Apr 2, 2012' : 'Before Apr 2, 2012'],
           ['City Service (EDIC Years)', `${edicYears.length} years`],
           ['Current Annual Salary', formatCurrencyFull(inputs.expectedFinalSalary)],
           ['Expected Salary Growth', `${inputs.salaryGrowthRate}% per year`],
@@ -556,7 +551,7 @@
 
           doc.autoTable({
             startY: y,
-            head: [['Year', 'Salary', '11% Contrib', 'Factor (3.45%)', 'Bal 12/31/25', 'Total @ 3.45%', 'Factor (6.9%)', 'Bal 12/31/25', 'Total @ 6.9%']],
+            head: [['Year', 'Salary', 'Contribution', 'Factor (3.45%)', 'Bal 12/31/25', 'Total @ 3.45%', 'Factor (6.9%)', 'Bal 12/31/25', 'Total @ 6.9%']],
             body: breakdownData,
             theme: 'striped',
             headStyles: { fillColor: [40, 80, 120], fontSize: 7.5, cellPadding: 3 },
@@ -1080,7 +1075,7 @@
                         <tr style={{ borderBottom: '1px solid rgba(100,150,200,0.3)' }}>
                           <th style={{ padding: '8px', textAlign: 'left', color: '#80a8c8' }}>Year</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Salary</th>
-                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>11%</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Contrib</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>Factor</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 3.45%</th>
                           <th style={{ padding: '8px', textAlign: 'right', color: '#80a8c8' }}>@ 6.9%</th>
@@ -1123,13 +1118,6 @@
                   </div>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>BRS Membership Date</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'post-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'post-2012')}>On/After Apr 2, 2012</button>
-                    <button style={{ ...styles.toggleBtn, ...(inputs.brsJoinDate === 'pre-2012' ? styles.toggleBtnActive : {}) }} onClick={() => handleInputChange('brsJoinDate', 'pre-2012')}>Before Apr 2, 2012</button>
-                  </div>
-                </div>
 
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#90b8d8', fontSize: '13px', fontWeight: '500' }}>Current Annual Salary</label>
