@@ -196,6 +196,9 @@
 
       const [newYear, setNewYear] = useState('');
       const [newSalary, setNewSalary] = useState('');
+      const [pasteText, setPasteText] = useState('');
+      const [pastePreview, setPastePreview] = useState(null);
+      const [pasteError, setPasteError] = useState('');
       const salaryInputRef = useRef(null);
       const yearInputRef = useRef(null);
       
@@ -260,6 +263,69 @@
         setEdicYears([]);
         setNewYear('');
         setNewSalary('');
+      };
+
+      const parsePastedData = (text) => {
+        setPasteText(text);
+        setPasteError('');
+        setPastePreview(null);
+        if (!text.trim()) return;
+
+        const lines = text.trim().split('\n').filter(l => l.trim());
+        const parsed = [];
+        const errors = [];
+
+        lines.forEach((line, i) => {
+          // Support tab, comma, pipe, or multi-space as delimiters
+          const parts = line.trim().split(/[\t,|]+|\s{2,}/).map(s => s.trim().replace(/[$,]/g, ''));
+          
+          if (parts.length < 2) {
+            errors.push(`Row ${i + 1}: Need at least 2 columns (year and salary)`);
+            return;
+          }
+
+          const year = parseInt(parts[0]);
+          const salary = parseFloat(parts[1]);
+
+          // Skip header rows
+          if (isNaN(year) || isNaN(salary)) {
+            if (i === 0 && (parts[0].toLowerCase().includes('year') || parts[0].toLowerCase().includes('date'))) {
+              return; // Skip header
+            }
+            errors.push(`Row ${i + 1}: Could not parse "${line.trim()}"`);
+            return;
+          }
+
+          if (year < 1977 || year > 2030) {
+            errors.push(`Row ${i + 1}: Year ${year} is out of range (1977–2030)`);
+            return;
+          }
+
+          if (salary <= 0) {
+            errors.push(`Row ${i + 1}: Salary must be positive`);
+            return;
+          }
+
+          parsed.push({ year, salary: Math.round(salary) });
+        });
+
+        if (parsed.length > 0) {
+          parsed.sort((a, b) => a.year - b.year);
+          setPastePreview(parsed);
+        }
+        if (errors.length > 0) {
+          setPasteError(errors.join('\n'));
+        }
+      };
+
+      const applyPastedData = () => {
+        if (pastePreview && pastePreview.length > 0) {
+          setEdicYears(pastePreview);
+          setPasteText('');
+          setPastePreview(null);
+          setPasteError('');
+          setEntryMode('manual');
+        }
       };
 
       const buybackCalculation = useMemo(() => {
@@ -943,6 +1009,7 @@
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button style={{ ...styles.smallBtn, ...(entryMode === 'manual' ? styles.toggleBtnActive : {}) }} onClick={() => setEntryMode('manual')}>Enter Manually</button>
                   <button style={{ ...styles.smallBtn, ...(entryMode === 'quickfill' ? styles.toggleBtnActive : {}) }} onClick={() => setEntryMode('quickfill')}>Quick Fill</button>
+                  <button style={{ ...styles.smallBtn, ...(entryMode === 'paste' ? styles.toggleBtnActive : {}) }} onClick={() => setEntryMode('paste')}>Paste from Spreadsheet</button>
                   {edicYears.length > 0 && <button style={styles.smallBtn} onClick={clearAll}>Clear All</button>}
                 </div>
               </div>
@@ -973,6 +1040,91 @@
                   </div>
                   
                   <button style={styles.applyBtn} onClick={applyQuickFill}>Generate Years</button>
+                </div>
+              ) : entryMode === 'paste' ? (
+                <div style={{ padding: '20px', background: 'rgba(40,80,120,0.3)', borderRadius: '12px', marginBottom: '16px' }}>
+                  <p style={{ color: '#a0c4e8', fontSize: '14px', margin: '0 0 4px 0' }}>
+                    Copy two columns from Excel or Google Sheets (Year and Salary) and paste below.
+                  </p>
+                  <p style={{ color: '#607890', fontSize: '12px', margin: '0 0 16px 0' }}>
+                    Accepts tab-separated, comma-separated, or pipe-separated data. Header rows are auto-skipped.
+                  </p>
+                  
+                  <textarea
+                    value={pasteText}
+                    onChange={(e) => parsePastedData(e.target.value)}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const text = e.clipboardData.getData('text');
+                      parsePastedData(text);
+                    }}
+                    placeholder={"Year\tSalary\n2018\t75000\n2019\t77500\n2020\t80000\n2021\t82500\n2022\t85000"}
+                    rows={8}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      fontSize: '14px',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      background: 'rgba(20,40,70,0.8)',
+                      border: '1px solid rgba(100,150,200,0.3)',
+                      borderRadius: '8px',
+                      color: '#e0f0ff',
+                      outline: 'none',
+                      resize: 'vertical',
+                      lineHeight: '1.6'
+                    }}
+                  />
+
+                  {pasteError && (
+                    <div style={{ 
+                      marginTop: '12px', padding: '12px', 
+                      background: 'rgba(200,80,60,0.15)', 
+                      border: '1px solid rgba(200,80,60,0.3)', 
+                      borderRadius: '8px' 
+                    }}>
+                      <div style={{ color: '#f0a080', fontSize: '13px', whiteSpace: 'pre-line' }}>{pasteError}</div>
+                    </div>
+                  )}
+
+                  {pastePreview && pastePreview.length > 0 && (
+                    <div style={{ marginTop: '16px' }}>
+                      <div style={{ 
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                        marginBottom: '12px' 
+                      }}>
+                        <span style={{ color: '#60d080', fontSize: '14px', fontWeight: '500' }}>
+                          ✓ {pastePreview.length} year{pastePreview.length !== 1 ? 's' : ''} detected
+                        </span>
+                        <button style={styles.applyBtn} onClick={applyPastedData}>
+                          Apply {pastePreview.length} Years
+                        </button>
+                      </div>
+
+                      <div style={{ 
+                        background: 'rgba(20,40,70,0.5)', borderRadius: '8px', 
+                        border: '1px solid rgba(100,150,200,0.2)', overflow: 'hidden'
+                      }}>
+                        <div style={{ 
+                          display: 'grid', gridTemplateColumns: '80px 1fr', gap: '0',
+                          padding: '8px 14px', borderBottom: '1px solid rgba(100,150,200,0.2)',
+                          background: 'rgba(40,80,120,0.3)'
+                        }}>
+                          <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', fontWeight: '600' }}>Year</div>
+                          <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', fontWeight: '600' }}>Salary</div>
+                        </div>
+                        {pastePreview.map((row, i) => (
+                          <div key={i} style={{ 
+                            display: 'grid', gridTemplateColumns: '80px 1fr', gap: '0',
+                            padding: '6px 14px', 
+                            borderBottom: i < pastePreview.length - 1 ? '1px solid rgba(100,150,200,0.08)' : 'none'
+                          }}>
+                            <div style={{ color: '#c0daf0', fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px' }}>{row.year}</div>
+                            <div style={{ color: '#e0f0ff', fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px' }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(row.salary)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
