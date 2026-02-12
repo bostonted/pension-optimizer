@@ -276,8 +276,23 @@
         const errors = [];
 
         lines.forEach((line, i) => {
-          // Support tab, comma, pipe, or multi-space as delimiters
-          const parts = line.trim().split(/[\t,|]+|\s{2,}/).map(s => s.trim().replace(/[$,]/g, ''));
+          // Detect delimiter: tabs first (Excel/Sheets default), then pipe, then comma (but not thousands separators), then multi-space
+          const raw = line.trim();
+          let parts;
+          if (raw.includes('\t')) {
+            parts = raw.split(/\t+/);
+          } else if (raw.includes('|')) {
+            parts = raw.split(/\|+/);
+          } else if (/,\s*[^0-9]/.test(raw) || /,[0-9]{1,2}(?!\d)/.test(raw) || (raw.match(/,/g) || []).length === 1 && !/,\d{3}/.test(raw)) {
+            // Comma is likely a delimiter (not a thousands separator like 85,000)
+            parts = raw.split(/,/);
+          } else if (/\s{2,}/.test(raw)) {
+            parts = raw.split(/\s{2,}/);
+          } else {
+            // Single-space separated as last resort
+            parts = raw.split(/\s+/);
+          }
+          parts = parts.map(s => s.trim().replace(/[$,]/g, ''));
           
           if (parts.length < 2) {
             errors.push(`Row ${i + 1}: Need at least 2 columns (year and salary)`);
