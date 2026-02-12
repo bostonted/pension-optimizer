@@ -1042,7 +1042,7 @@
         const chartLeft = margin + 50;
         const chartRight = pageWidth - margin - 20;
         const chartTop = y + 5;
-        const chartBottom = pageHeight - 60;
+        const chartBottom = pageHeight - 70;
         const chartWidth = chartRight - chartLeft;
         const chartHeight = chartBottom - chartTop;
 
@@ -1147,14 +1147,9 @@
           });
         }
 
-        // ===== LEGEND =====
-        const legendX = chartRight - 80;
-        const legendY = chartTop + 8;
-        doc.setFillColor(250, 252, 255);
-        doc.roundedRect(legendX - 6, legendY - 6, 88, edicServiceYears > 0 ? 24 : 14, 2, 2, 'F');
-        doc.setDrawColor(180, 200, 220);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(legendX - 6, legendY - 6, 88, edicServiceYears > 0 ? 24 : 14, 2, 2, 'S');
+        // ===== LEGEND (below chart) =====
+        const legendX = chartLeft + chartWidth / 2 - (edicServiceYears > 0 ? 75 : 40);
+        const legendY = chartBottom + 24;
 
         // Without Buyback legend
         doc.setDrawColor(100, 160, 210);
@@ -1168,13 +1163,14 @@
 
         // With Buyback legend
         if (edicServiceYears > 0) {
+          const bbLegendX = legendX + 90;
           doc.setDrawColor(60, 190, 100);
           doc.setLineWidth(1.5);
-          doc.line(legendX, legendY + 12, legendX + 12, legendY + 12);
+          doc.line(bbLegendX, legendY, bbLegendX + 12, legendY);
           doc.setFillColor(60, 190, 100);
-          doc.circle(legendX + 6, legendY + 12, 1.2, 'F');
+          doc.circle(bbLegendX + 6, legendY, 1.2, 'F');
           doc.setTextColor(60, 90, 120);
-          doc.text('With Buyback', legendX + 16, legendY + 14.5);
+          doc.text('With Buyback', bbLegendX + 16, legendY + 2.5);
         }
 
         // ===== DATA TABLE ON PAGE 2 =====
