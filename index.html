@@ -640,7 +640,7 @@
           const salaryStr = calculations.frozenAvgSalaryWithBuyback > 0 
             ? formatCurrency(calculations.frozenAvgSalaryWithBuyback)
             : '$0 (not enough salary years)';
-          doc.text(`Service freezes at ${totalService} yrs (${calculations.frozenServiceYears?.toFixed(1)} city + ${calculations.edicServiceYears} buyback)  •  Highest 5-yr avg: ${salaryStr}  •  Pension starts at age ${calculations.minRetirementAge}`, margin + 6, y + 9);
+          doc.text(`Service years freeze at ${totalService}  •  Highest 5-yr avg: ${salaryStr}  •  Pension starts at age ${calculations.minRetirementAge}`, margin + 6, y + 9);
           y += 18;
         }
 
@@ -752,7 +752,7 @@
           doc.text(`Age ${s.retireAge}`, cx + 5, cardY + 19);
           doc.setFontSize(8);
           doc.setTextColor(80, 120, 160);
-          doc.text(`${s.serviceWithBuyback.toFixed(1)} yrs service  •  ${formatPercent(s.percentWith)} of salary`, cx + 5, cardY + 25);
+          doc.text(`${s.serviceWithBuyback.toFixed(1)} service years  •  ${formatPercent(s.percentWith)} of salary`, cx + 5, cardY + 25);
           
           doc.setFontSize(7);
           doc.setTextColor(100, 130, 160);
@@ -813,7 +813,7 @@
           doc.text(`Age ${s.retireAge}`, cx + 5, cardY + 19);
           doc.setFontSize(8);
           doc.setTextColor(100, 130, 160);
-          doc.text(`${s.serviceAtRetirement.toFixed(1)} yrs service  •  ${formatPercent(s.percentWithout)} of salary`, cx + 5, cardY + 25);
+          doc.text(`${s.serviceAtRetirement.toFixed(1)} service years  •  ${formatPercent(s.percentWithout)} of salary`, cx + 5, cardY + 25);
           
           doc.setFontSize(7);
           doc.setTextColor(100, 130, 160);
@@ -834,44 +834,46 @@
         const scenarioData = eligibleScenarios.map(s => {
           const isOptimal = calculations.optimalWithBuyback?.retireAge === s.retireAge;
           let status = '';
-          if (s.buybackWasted) status = 'BB WASTED';
+          if (s.notVestedWith) status = 'NOT VESTED';
+          else if (s.buybackWasted) status = 'BB WASTED';
           else if (s.hitsMaxWith) status = 'MAX 80%';
           else if (isOptimal) status = '★ BEST';
+          const pensionDiff = s.annualPensionWith - s.annualPensionWithout;
 
           return [
             s.retireAge.toString() + (isOptimal ? ' ★' : ''),
-            s.serviceAtRetirement.toFixed(1),
             s.serviceWithBuyback.toFixed(1),
-            formatCurrency(s.avgSalaryWithout),
             formatCurrency(s.avgSalaryWith),
-            formatPercent(s.percentWithout) + (s.hitsMaxWithout ? ' ★' : ''),
             formatPercent(s.percentWith) + (s.hitsMaxWith ? ' ★' : ''),
-            formatCurrency(s.annualPensionWithout),
             formatCurrency(s.annualPensionWith),
+            pensionDiff > 0 ? `+${formatCurrency(pensionDiff)}` : '—',
             status
           ];
         });
 
         doc.autoTable({
           startY: y,
-          head: [['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', 'Avg w/ BB', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status']],
+          head: [['Retire Age', 'Service Yrs', 'Avg Salary', '% Benefit', 'Annual Pension', 'vs No Buyback', 'Status']],
           body: scenarioData,
           theme: 'striped',
           headStyles: { fillColor: [40, 80, 120], fontSize: 7.5, cellPadding: 3 },
           bodyStyles: { fontSize: 8, cellPadding: 2.5 },
           columnStyles: {
             0: { fontStyle: 'bold' },
-            4: { textColor: [40, 140, 180] },
-            6: { textColor: [40, 140, 180] },
-            8: { textColor: [40, 160, 80] },
-            9: { halign: 'center', fontSize: 7 }
+            4: { textColor: [40, 160, 80] },
+            5: { textColor: [40, 160, 80] },
+            6: { halign: 'center', fontSize: 7 }
           },
           margin: { left: margin, right: margin },
           alternateRowStyles: { fillColor: [240, 246, 252] },
           didParseCell: (data) => {
-            if (data.section === 'body' && data.column.index === 9) {
+            if (data.section === 'body' && data.column.index === 5) {
+              if (data.cell.raw === '—') data.cell.styles.textColor = [150, 150, 150];
+            }
+            if (data.section === 'body' && data.column.index === 6) {
               const val = data.cell.raw;
-              if (val === 'BB WASTED') data.cell.styles.textColor = [200, 100, 40];
+              if (val === 'NOT VESTED') data.cell.styles.textColor = [200, 60, 60];
+              else if (val === 'BB WASTED') data.cell.styles.textColor = [200, 100, 40];
               else if (val === 'MAX 80%') data.cell.styles.textColor = [40, 100, 200];
               else if (val === '★ BEST') data.cell.styles.textColor = [40, 160, 60];
             }
@@ -1377,8 +1379,7 @@
           .filter(d => d.depAge >= currentAge)
           .map(d => {
             const yearsFromNow = d.depAge - currentAge;
-            const frozenService = currentCityServiceYears + yearsFromNow;
-            const serviceWithBB = frozenService + edicServiceYears;
+            const serviceYears = currentCityServiceYears + yearsFromNow + edicServiceYears;
             const diff = d.withBB - d.withoutBB;
             let status = '';
             if (d.notVestedWith) status = 'NOT VESTED';
@@ -1386,19 +1387,17 @@
             return [
               d.depAge.toString(),
               `${yearsFromNow}`,
-              frozenService.toFixed(1),
-              edicServiceYears > 0 ? serviceWithBB.toFixed(1) : '—',
+              serviceYears.toFixed(1),
               d.collectionAge.toString(),
-              d.notVestedWithout ? 'Not vested' : formatCurrencyFull(Math.round(d.withoutBB)),
-              d.notVestedWith ? 'Not vested' : (edicServiceYears > 0 ? formatCurrencyFull(Math.round(d.withBB)) : '—'),
-              d.notVestedWith ? '—' : (edicServiceYears > 0 ? (diff > 0 ? `+${formatCurrencyFull(Math.round(diff))}` : formatCurrencyFull(Math.round(diff))) : '—'),
+              d.notVestedWith ? 'Not vested' : formatCurrencyFull(Math.round(d.withBB)),
+              d.notVestedWith ? '—' : (diff > 0 ? `+${formatCurrencyFull(Math.round(diff))}` : '—'),
               status
             ];
           });
 
         doc.autoTable({
           startY: y2,
-          head: [['Departure Age', 'Years from Now', 'City Service', 'w/ Buyback', 'Collection Age', 'Annual (No BB)', 'Annual (w/ BB)', 'BB Benefit', 'Status']],
+          head: [['Departure Age', 'Yrs from Now', 'Service Yrs', 'Collection Age', 'Annual Pension', 'Buyback Benefit', 'Status']],
           body: tableData,
           theme: 'striped',
           headStyles: { fillColor: [40, 80, 120], fontSize: 8, cellPadding: 3 },
@@ -1407,29 +1406,23 @@
             0: { fontStyle: 'bold', halign: 'center' },
             1: { halign: 'center' },
             2: { halign: 'center' },
-            3: { halign: 'center', textColor: [40, 160, 80] },
-            4: { halign: 'center' },
-            5: { halign: 'right', textColor: [60, 120, 180] },
-            6: { halign: 'right', textColor: [40, 160, 80] },
-            7: { halign: 'right' },
-            8: { halign: 'center', fontSize: 7 }
+            3: { halign: 'center' },
+            4: { halign: 'right', textColor: [40, 160, 80] },
+            5: { halign: 'right' },
+            6: { halign: 'center', fontSize: 7 }
           },
           margin: { left: margin, right: margin },
           alternateRowStyles: { fillColor: [240, 246, 252] },
           didParseCell: (data) => {
-            if (data.section === 'body' && data.column.index === 7) {
+            if (data.section === 'body' && data.column.index === 4) {
+              if (data.cell.raw === 'Not vested') data.cell.styles.textColor = [200, 60, 60];
+            }
+            if (data.section === 'body' && data.column.index === 5) {
               const raw = data.cell.raw;
               if (raw.startsWith('+')) data.cell.styles.textColor = [40, 160, 80];
               else if (raw === '—') data.cell.styles.textColor = [150, 150, 150];
-              else data.cell.styles.textColor = [200, 60, 60];
-            }
-            if (data.section === 'body' && data.column.index === 5) {
-              if (data.cell.raw === 'Not vested') data.cell.styles.textColor = [200, 60, 60];
             }
             if (data.section === 'body' && data.column.index === 6) {
-              if (data.cell.raw === 'Not vested') data.cell.styles.textColor = [200, 60, 60];
-            }
-            if (data.section === 'body' && data.column.index === 8) {
               const raw = data.cell.raw;
               if (raw === 'NOT VESTED') data.cell.styles.textColor = [200, 60, 60];
               else if (raw === "BB REQ'D") data.cell.styles.textColor = [200, 150, 40];
@@ -1440,9 +1433,9 @@
         y2 = doc.lastAutoTable.finalY + 6;
         doc.setFontSize(7.5);
         doc.setTextColor(130, 130, 130);
-        doc.text('Collection age = max(60, departure age). Pension begins at earliest eligible retirement age. Vesting requires 10+ years of creditable service.', margin, y2);
+        doc.text('Collection age = max(60, departure age). Pension begins at earliest eligible retirement age. Vesting requires 10+ service years.', margin, y2);
         y2 += 4;
-        doc.text('Service years freeze at departure. Salary growth stops at departure. Highest 5-year average requires at least 5 salary years in pool.', margin, y2);
+        doc.text('Service years = EDIC buyback years + salary years. Service years freeze at departure. Highest 5-year average from combined salary pool.', margin, y2);
 
         // ===== FOOTER ON ALL PAGES =====
         const pageCount = doc.internal.getNumberOfPages();
@@ -1848,8 +1841,7 @@
                   <div>
                     <div style={{ color: '#e0c080', fontWeight: '600', marginBottom: '4px' }}>Early Departure at Age {calculations.departureAge}</div>
                     <div style={{ color: '#b0a080', fontSize: '13px' }}>
-                      Service freezes at {(calculations.frozenServiceYears + calculations.edicServiceYears).toFixed(1)} years
-                      ({calculations.frozenServiceYears?.toFixed(1)} city + {calculations.edicServiceYears} buyback) • 
+                      Service years freeze at {(calculations.frozenServiceYears + calculations.edicServiceYears).toFixed(1)} • 
                       Highest 5-yr avg salary: {calculations.frozenAvgSalaryWithBuyback > 0 
                         ? formatCurrency(calculations.frozenAvgSalaryWithBuyback)
                         : '$0 (not enough salary years)'} • 
@@ -1869,7 +1861,7 @@
                     <span style={{ ...styles.badge, ...styles.badgeOptimal }}>Recommended</span>
                   </div>
                   <div style={{ ...styles.statValue, fontSize: '42px', color: '#e0f8ff', marginBottom: '8px' }}>Age {calculations.optimalWithBuyback.retireAge}</div>
-                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} years service • {formatPercent(calculations.optimalWithBuyback.percentWith)} of salary</div>
+                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithBuyback.serviceWithBuyback.toFixed(1)} service years • {formatPercent(calculations.optimalWithBuyback.percentWith)} of salary</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Annual Pension</div>
@@ -1901,7 +1893,7 @@
                 <div style={{ ...styles.card, padding: '24px' }}>
                   <div style={{ color: '#80c0e8', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '16px' }}>Without Buyback</div>
                   <div style={{ ...styles.statValue, fontSize: '42px', color: '#c0d8e8', marginBottom: '8px' }}>Age {calculations.optimalWithoutBuyback.retireAge}</div>
-                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithoutBuyback.serviceAtRetirement.toFixed(1)} years service • {formatPercent(calculations.optimalWithoutBuyback.percentWithout)} of salary</div>
+                  <div style={{ color: '#a0d0f0', fontSize: '14px', marginBottom: '16px' }}>{calculations.optimalWithoutBuyback.serviceAtRetirement.toFixed(1)} service years • {formatPercent(calculations.optimalWithoutBuyback.percentWithout)} of salary</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(100,150,200,0.2)' }}>
                     <div>
                       <div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Annual Pension</div>
@@ -1932,8 +1924,8 @@
                 }}>
                   <strong style={{ color: '#f07070', fontSize: '15px' }}>⚠️ Not Vested</strong>
                   <p style={{ color: '#e0a0a0', margin: '8px 0 0 0', fontSize: '14px', lineHeight: '1.5' }}>
-                    Your combined EDIC buyback years ({edicYears.length}) plus projected city service years do not reach the {calculations.VESTING_YEARS}-year vesting requirement, even at age 70. 
-                    You must have at least {calculations.VESTING_YEARS} years of creditable service to be eligible for a pension.
+                    Your total service years ({edicYears.length} buyback + projected salary years) do not reach the {calculations.VESTING_YEARS}-year vesting requirement, even at age 70. 
+                    You must have at least {calculations.VESTING_YEARS} service years to be eligible for a pension.
                   </p>
                 </div>
               )}
@@ -1957,7 +1949,7 @@
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(100,150,200,0.3)' }}>
-                      {['Retire Age', 'Service', 'w/ Buyback', 'Avg Salary', 'Avg w/ BB', '% (No BB)', '% (w/ BB)', 'Annual (No BB)', 'Annual (w/ BB)', 'Status'].map((h) => (
+                      {['Retire Age', 'Service Yrs', 'Avg Salary', '% Benefit', 'Annual Pension', 'vs No Buyback', 'Status'].map((h) => (
                         <th key={h} style={{ padding: '12px 8px', textAlign: h === 'Status' ? 'center' : (h === 'Retire Age' ? 'left' : 'right'), color: '#80a8c8', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
@@ -1966,6 +1958,7 @@
                     {calculations.scenarios.filter(s => !s.notEligible && !s.alreadyPast).map((s) => {
                       const isOptimal = calculations.optimalWithBuyback?.retireAge === s.retireAge;
                       const isSelected = selectedScenario === s.retireAge;
+                      const pensionDiff = s.annualPensionWith - s.annualPensionWithout;
                       return (
                         <tr key={s.retireAge} className="scenario-row" onClick={() => setSelectedScenario(isSelected ? null : s.retireAge)}
                           style={{ borderBottom: '1px solid rgba(100,150,200,0.1)', background: isSelected ? 'rgba(60,140,200,0.25)' : (isOptimal ? 'rgba(60,160,100,0.1)' : undefined), borderLeft: isSelected ? '3px solid #60b0e0' : '3px solid transparent', cursor: 'pointer' }}>
@@ -1973,14 +1966,11 @@
                             {s.retireAge}
                             {isOptimal && <span style={{ ...styles.badge, ...styles.badgeOptimal, marginLeft: '8px' }}>Best</span>}
                           </td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{s.serviceAtRetirement.toFixed(1)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{s.serviceWithBuyback.toFixed(1)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.avgSalaryWithout)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{formatCurrency(s.avgSalaryWith)}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatPercent(s.percentWithout)}{s.hitsMaxWithout && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#80c8e8' }}>{formatPercent(s.percentWith)}{s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
-                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.annualPensionWithout)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{s.serviceWithBuyback.toFixed(1)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.avgSalaryWith)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatPercent(s.percentWith)}{s.hitsMaxWith && <span style={{ marginLeft: '4px', color: '#60a0e0' }}>★</span>}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>{formatCurrency(s.annualPensionWith)}</td>
+                          <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: pensionDiff > 0 ? '#60d080' : '#a0b0c0' }}>{pensionDiff > 0 ? `+${formatCurrency(pensionDiff)}` : '—'}</td>
                           <td style={{ padding: '14px 8px', textAlign: 'center' }}>
                             {s.notVestedWith ? <span style={{ ...styles.badge, background: 'linear-gradient(135deg, #b71c1c, #e53935)', color: 'white' }}>Not Vested</span> : s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
                           </td>
@@ -2051,11 +2041,12 @@
                 <div style={{ ...styles.highlightCard, padding: '28px', marginBottom: '24px' }}>
                   <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 20px 0', color: '#c0daf0' }}>Detailed Analysis: Retire at Age {s.retireAge}</h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Service Years</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.serviceWithBuyback.toFixed(1)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Until Retirement</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsUntilRetirement}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Years Collecting</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{s.yearsCollecting}</div></div>
-                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg (No BB)</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalaryWithout)}</div></div>
-                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg (w/ BB)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#80c8e8' }}>{formatCurrency(s.avgSalaryWith)}</div></div>
-                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrencyFull(s.buybackCost)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Highest {calculations.avgYears}-Yr Avg Salary</div><div style={{ ...styles.statValue, fontSize: '24px' }}>{formatCurrency(s.avgSalaryWith)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Pension</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#60d080' }}>{formatCurrency(s.annualPensionWith)}</div></div>
+                    <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (3.45%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#f0c060' }}>{formatCurrencyFull(s.buybackCost)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Buyback Cost (6.9%)</div><div style={{ ...styles.statValue, fontSize: '24px', color: '#f0a060' }}>{formatCurrencyFull(s.buybackCostFull)}</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Benefit from BB</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.annualBenefit > 0 ? '#60d080' : '#a0a0a0' }}>+{formatCurrency(s.annualBenefit)}/yr</div></div>
                     <div><div style={{ color: '#80a8c8', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Lifetime Gain from BB</div><div style={{ ...styles.statValue, fontSize: '24px', color: s.lifetimeGain > 0 ? '#60d080' : '#a0a0a0' }}>{formatCurrency(s.lifetimeGain)}</div></div>
