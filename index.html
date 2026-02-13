@@ -392,6 +392,7 @@
         const table = GROUP1_TABLE_POST_2012;
         const minRetirementAge = 60;
         const avgYears = 5;
+        const VESTING_YEARS = 10;
         const MAX_BENEFIT_PERCENT = 80;
         
         // If departure age is set, service and salary freeze at that point
@@ -404,7 +405,8 @@
         // Get all EDIC salaries (for buyback years)
         const edicSalaries = edicYears.map(y => y.salary);
         
-        // Calculate highest avg salary including EDIC years if buyback
+        // Calculate highest 5-year avg salary
+        // Must have at least 5 salary years in the pool; always divides by 5
         const getHighestAvgSalary = (retirementAge, includeBuyback) => {
           const yearsUntilRetirement = retirementAge - currentAge;
           const allSalaries = [];
@@ -420,10 +422,12 @@
             allSalaries.push(projectSalary(i));
           }
           
-          // Sort descending and take highest N years
+          // Must have at least 5 salary years to calculate the average
+          if (allSalaries.length < avgYears) return 0;
+          
+          // Sort descending, take top 5, divide by 5
           allSalaries.sort((a, b) => b - a);
-          const topYears = allSalaries.slice(0, avgYears);
-          return topYears.length > 0 ? topYears.reduce((a, b) => a + b, 0) / topYears.length : 0;
+          return allSalaries.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears;
         };
         
         // Calculate frozen salary if departing early (without buyback for comparison)
@@ -449,12 +453,28 @@
           return currentCityServiceYears + Math.max(0, yearsUntilRetirement);
         };
 
+        // Count total salary years available at a given retirement age
+        const getSalaryYearCount = (retirementAge, includeBuyback) => {
+          const yearsUntilRetirement = retirementAge - currentAge;
+          const maxCityYears = willDepart ? Math.min(yearsUntilRetirement, yearsUntilDeparture) : yearsUntilRetirement;
+          const cityCount = Math.max(0, maxCityYears) + 1;
+          return cityCount + (includeBuyback ? edicSalaries.length : 0);
+        };
+
         const scenarios = [];
         
         for (let retireAge = 45; retireAge <= 70; retireAge++) {
           const yearsUntilRetirement = retireAge - currentAge;
           const serviceAtRetirement = getServiceAtRetirement(retireAge);
           const serviceWithBuyback = serviceAtRetirement + edicServiceYears;
+          
+          // Vesting check: need >= 10 years of service
+          const notVestedWithout = serviceAtRetirement < VESTING_YEARS;
+          const notVestedWith = serviceWithBuyback < VESTING_YEARS;
+
+          // Salary year check: need >= 5 salary years for the average
+          const tooFewYearsWithout = getSalaryYearCount(retireAge, false) < avgYears;
+          const tooFewYearsWith = getSalaryYearCount(retireAge, true) < avgYears;
           
           // Calculate avg salary WITHOUT buyback (only City years)
           const avgSalaryWithout = getHighestAvgSalary(retireAge, false);
@@ -464,8 +484,8 @@
           const percentWithout = getBenefitPercent(retireAge, serviceAtRetirement);
           const percentWith = getBenefitPercent(retireAge, serviceWithBuyback);
           
-          const annualPensionWithout = avgSalaryWithout * (percentWithout / 100);
-          const annualPensionWith = avgSalaryWith * (percentWith / 100);
+          const annualPensionWithout = (notVestedWithout || tooFewYearsWithout) ? 0 : avgSalaryWithout * (percentWithout / 100);
+          const annualPensionWith = (notVestedWith || tooFewYearsWith) ? 0 : avgSalaryWith * (percentWith / 100);
           const annualBenefit = annualPensionWith - annualPensionWithout;
 
           const yearsCollecting = lifeExpectancy - retireAge;
@@ -494,19 +514,26 @@
             percentWithout, percentWith, annualPensionWithout, annualPensionWith, annualBenefit,
             lifetimeBenefitWithout, lifetimeBenefitWith, lifetimeGain, buybackCost, buybackCostFull,
             netLifetimeGain, roi, paybackYears, hitsMaxWithout, hitsMaxWith, buybackWasted: hitsMaxWithout, yearsCollecting,
-            tooYoung, alreadyPast, notEligible, minRetirementAge
+            tooYoung, alreadyPast, notEligible, notVestedWithout, notVestedWith, 
+            tooFewYearsWithout, tooFewYearsWith, minRetirementAge
           });
         }
 
         const eligibleScenarios = scenarios.filter(s => !s.notEligible && !s.alreadyPast);
         
+        // Global vesting check: are they vested at the latest possible retirement age (70)?
+        const maxScenario = scenarios.find(s => s.retireAge === 70);
+        const neverVestedWithout = maxScenario ? maxScenario.notVestedWithout : true;
+        const neverVestedWith = maxScenario ? maxScenario.notVestedWith : true;
+
         return {
           scenarios,
-          optimalWithBuyback: eligibleScenarios.filter(s => !s.buybackWasted).sort((a, b) => b.lifetimeBenefitWith - a.lifetimeBenefitWith)[0],
-          optimalWithoutBuyback: [...eligibleScenarios].sort((a, b) => b.lifetimeBenefitWithout - a.lifetimeBenefitWithout)[0],
-          bestBuybackROI: eligibleScenarios.filter(s => !s.buybackWasted && s.roi > 0).sort((a, b) => b.roi - a.roi)[0],
-          minRetirementAge, avgYears, edicServiceYears,
-          willDepart, departureAge: willDepart ? departureAge : null, frozenServiceYears, frozenAvgSalary
+          optimalWithBuyback: eligibleScenarios.filter(s => !s.buybackWasted && !s.notVestedWith).sort((a, b) => b.lifetimeBenefitWith - a.lifetimeBenefitWith)[0],
+          optimalWithoutBuyback: eligibleScenarios.filter(s => !s.notVestedWithout).sort((a, b) => b.lifetimeBenefitWithout - a.lifetimeBenefitWithout)[0],
+          bestBuybackROI: eligibleScenarios.filter(s => !s.buybackWasted && !s.notVestedWith && s.roi > 0).sort((a, b) => b.roi - a.roi)[0],
+          minRetirementAge, avgYears, edicServiceYears, VESTING_YEARS,
+          willDepart, departureAge: willDepart ? departureAge : null, frozenServiceYears, frozenAvgSalary,
+          neverVestedWithout, neverVestedWith
         };
       }, [inputs, edicYears, buybackCalculation]);
 
@@ -973,6 +1000,7 @@
         const { currentAge, expectedFinalSalary, salaryGrowthRate, lifeExpectancy } = inputs;
         const table = GROUP1_TABLE_POST_2012;
         const avgYears = 5;
+        const VESTING_YEARS = 10;
         const MAX_BENEFIT_PERCENT = 80;
         const edicServiceYears = edicYears.length;
         const currentCityServiceYears = edicYears.length;
@@ -988,12 +1016,17 @@
         for (let depAge = minDep; depAge <= maxDep; depAge++) {
           const yearsUntilDeparture = depAge - currentAge;
           if (yearsUntilDeparture < 0) {
-            dataPoints.push({ depAge, withoutBB: 0, withBB: 0, collectionAge: 60 });
+            dataPoints.push({ depAge, withoutBB: 0, withBB: 0, collectionAge: 60, notVestedWithout: true, notVestedWith: true });
             continue;
           }
 
           const frozenService = currentCityServiceYears + yearsUntilDeparture;
+          const serviceWithBB = frozenService + edicServiceYears;
           const collectionAge = Math.max(60, depAge);
+
+          // Vesting check
+          const notVestedWithout = frozenService < VESTING_YEARS;
+          const notVestedWith = serviceWithBB < VESTING_YEARS;
 
           // Build salary history up to departure
           const citySalaries = [];
@@ -1001,22 +1034,24 @@
             citySalaries.push(projectSalary(i));
           }
 
-          // Highest N-year avg WITHOUT buyback
+          // Highest 5-year avg WITHOUT buyback (need >= 5 salary years)
           const salariesNoBB = [...citySalaries].sort((a, b) => b - a);
-          const avgNoBB = salariesNoBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / Math.min(salariesNoBB.length, avgYears);
+          const avgNoBB = (salariesNoBB.length >= avgYears && !notVestedWithout) 
+            ? salariesNoBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears : 0;
 
-          // Highest N-year avg WITH buyback
+          // Highest 5-year avg WITH buyback (need >= 5 salary years)
           const salariesWithBB = [...citySalaries, ...edicSalaries].sort((a, b) => b - a);
-          const avgWithBB = salariesWithBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / Math.min(salariesWithBB.length, avgYears);
+          const avgWithBB = (salariesWithBB.length >= avgYears && !notVestedWith)
+            ? salariesWithBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears : 0;
 
           const basePercent = table[collectionAge] || 0;
           const percentNoBB = Math.min(basePercent * frozenService, MAX_BENEFIT_PERCENT);
-          const percentWithBB = Math.min(basePercent * (frozenService + edicServiceYears), MAX_BENEFIT_PERCENT);
+          const percentWithBB = Math.min(basePercent * serviceWithBB, MAX_BENEFIT_PERCENT);
 
-          const annualNoBB = avgNoBB * (percentNoBB / 100);
-          const annualWithBB = avgWithBB * (percentWithBB / 100);
+          const annualNoBB = notVestedWithout ? 0 : avgNoBB * (percentNoBB / 100);
+          const annualWithBB = notVestedWith ? 0 : avgWithBB * (percentWithBB / 100);
 
-          dataPoints.push({ depAge, withoutBB: annualNoBB, withBB: annualWithBB, collectionAge });
+          dataPoints.push({ depAge, withoutBB: annualNoBB, withBB: annualWithBB, collectionAge, notVestedWithout, notVestedWith });
         }
 
         // ===== TITLE =====
@@ -1192,21 +1227,25 @@
             const frozenService = currentCityServiceYears + yearsFromNow;
             const serviceWithBB = frozenService + edicServiceYears;
             const diff = d.withBB - d.withoutBB;
+            let status = '';
+            if (d.notVestedWith) status = 'NOT VESTED';
+            else if (d.notVestedWithout && !d.notVestedWith && edicServiceYears > 0) status = 'BB REQ\'D';
             return [
               d.depAge.toString(),
               `${yearsFromNow}`,
               frozenService.toFixed(1),
               edicServiceYears > 0 ? serviceWithBB.toFixed(1) : '—',
               d.collectionAge.toString(),
-              formatCurrencyFull(Math.round(d.withoutBB)),
-              edicServiceYears > 0 ? formatCurrencyFull(Math.round(d.withBB)) : '—',
-              edicServiceYears > 0 ? (diff > 0 ? `+${formatCurrencyFull(Math.round(diff))}` : formatCurrencyFull(Math.round(diff))) : '—'
+              d.notVestedWithout ? 'Not vested' : formatCurrencyFull(Math.round(d.withoutBB)),
+              d.notVestedWith ? 'Not vested' : (edicServiceYears > 0 ? formatCurrencyFull(Math.round(d.withBB)) : '—'),
+              d.notVestedWith ? '—' : (edicServiceYears > 0 ? (diff > 0 ? `+${formatCurrencyFull(Math.round(diff))}` : formatCurrencyFull(Math.round(diff))) : '—'),
+              status
             ];
           });
 
         doc.autoTable({
           startY: y2,
-          head: [['Departure Age', 'Years from Now', 'City Service', 'w/ Buyback', 'Collection Age', 'Annual (No BB)', 'Annual (w/ BB)', 'BB Benefit']],
+          head: [['Departure Age', 'Years from Now', 'City Service', 'w/ Buyback', 'Collection Age', 'Annual (No BB)', 'Annual (w/ BB)', 'BB Benefit', 'Status']],
           body: tableData,
           theme: 'striped',
           headStyles: { fillColor: [40, 80, 120], fontSize: 8, cellPadding: 3 },
@@ -1219,7 +1258,8 @@
             4: { halign: 'center' },
             5: { halign: 'right', textColor: [60, 120, 180] },
             6: { halign: 'right', textColor: [40, 160, 80] },
-            7: { halign: 'right' }
+            7: { halign: 'right' },
+            8: { halign: 'center', fontSize: 7 }
           },
           margin: { left: margin, right: margin },
           alternateRowStyles: { fillColor: [240, 246, 252] },
@@ -1230,15 +1270,26 @@
               else if (raw === '—') data.cell.styles.textColor = [150, 150, 150];
               else data.cell.styles.textColor = [200, 60, 60];
             }
+            if (data.section === 'body' && data.column.index === 5) {
+              if (data.cell.raw === 'Not vested') data.cell.styles.textColor = [200, 60, 60];
+            }
+            if (data.section === 'body' && data.column.index === 6) {
+              if (data.cell.raw === 'Not vested') data.cell.styles.textColor = [200, 60, 60];
+            }
+            if (data.section === 'body' && data.column.index === 8) {
+              const raw = data.cell.raw;
+              if (raw === 'NOT VESTED') data.cell.styles.textColor = [200, 60, 60];
+              else if (raw === "BB REQ'D") data.cell.styles.textColor = [200, 150, 40];
+            }
           }
         });
 
         y2 = doc.lastAutoTable.finalY + 6;
         doc.setFontSize(7.5);
         doc.setTextColor(130, 130, 130);
-        doc.text('Collection age = max(60, departure age). Pension begins at earliest eligible retirement age.', margin, y2);
+        doc.text('Collection age = max(60, departure age). Pension begins at earliest eligible retirement age. Vesting requires 10+ years of creditable service.', margin, y2);
         y2 += 4;
-        doc.text('Service years freeze at departure. Salary growth stops at departure. Highest 5-year average used for benefit calculation.', margin, y2);
+        doc.text('Service years freeze at departure. Salary growth stops at departure. Highest 5-year average requires at least 5 salary years in pool.', margin, y2);
 
         // ===== FOOTER ON ALL PAGES =====
         const pageCount = doc.internal.getNumberOfPages();
@@ -1716,6 +1767,36 @@
                 All Retirement Scenarios
               </h2>
 
+              {calculations.neverVestedWith && edicYears.length > 0 && (
+                <div style={{ 
+                  marginBottom: '20px', padding: '16px 20px', 
+                  background: 'rgba(220,50,50,0.15)', 
+                  borderRadius: '12px', 
+                  border: '1px solid rgba(220,50,50,0.4)' 
+                }}>
+                  <strong style={{ color: '#f07070', fontSize: '15px' }}>⚠️ Not Vested</strong>
+                  <p style={{ color: '#e0a0a0', margin: '8px 0 0 0', fontSize: '14px', lineHeight: '1.5' }}>
+                    Your combined EDIC buyback years ({edicYears.length}) plus projected city service years do not reach the {calculations.VESTING_YEARS}-year vesting requirement, even at age 70. 
+                    You must have at least {calculations.VESTING_YEARS} years of creditable service to be eligible for a pension.
+                  </p>
+                </div>
+              )}
+
+              {calculations.neverVestedWithout && !calculations.neverVestedWith && edicYears.length > 0 && (
+                <div style={{ 
+                  marginBottom: '20px', padding: '16px 20px', 
+                  background: 'rgba(230,160,40,0.15)', 
+                  borderRadius: '12px', 
+                  border: '1px solid rgba(230,160,40,0.4)' 
+                }}>
+                  <strong style={{ color: '#f0c060', fontSize: '15px' }}>⚠️ Buyback Required for Vesting</strong>
+                  <p style={{ color: '#d0c090', margin: '8px 0 0 0', fontSize: '14px', lineHeight: '1.5' }}>
+                    Without buying back your EDIC service, you will not reach the {calculations.VESTING_YEARS}-year vesting requirement. 
+                    The buyback is essential for pension eligibility in your case.
+                  </p>
+                </div>
+              )}
+
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
@@ -1745,7 +1826,7 @@
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right' }}>{formatCurrency(s.annualPensionWithout)}</td>
                           <td style={{ ...styles.statValue, padding: '14px 8px', textAlign: 'right', color: '#60d080' }}>{formatCurrency(s.annualPensionWith)}</td>
                           <td style={{ padding: '14px 8px', textAlign: 'center' }}>
-                            {s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
+                            {s.notVestedWith ? <span style={{ ...styles.badge, background: 'linear-gradient(135deg, #b71c1c, #e53935)', color: 'white' }}>Not Vested</span> : s.buybackWasted ? <span style={{ ...styles.badge, ...styles.badgeWarning }}>BB Wasted</span> : s.hitsMaxWith ? <span style={{ ...styles.badge, ...styles.badgeMax }}>Max 80%</span> : null}
                           </td>
                         </tr>
                       );
