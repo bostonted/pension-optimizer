@@ -388,7 +388,7 @@
       const calculations = useMemo(() => {
         const { currentAge, expectedFinalSalary, salaryGrowthRate, lifeExpectancy, departureAge } = inputs;
         const edicServiceYears = edicYears.length;
-        const currentCityServiceYears = edicYears.length;
+        const currentCityServiceYears = 0; // City service accrues from now forward; EDIC buyback added separately
         const table = GROUP1_TABLE_POST_2012;
         const minRetirementAge = 60;
         const avgYears = 5;
@@ -608,7 +608,7 @@
         
         const infoItems = [
           ['Current Age', `${inputs.currentAge}`],
-          ['City Service (EDIC Years)', `${edicYears.length} years`],
+          ['EDIC Buyback Years', `${edicYears.length} years`],
           ['Current Annual Salary', formatCurrencyFull(inputs.expectedFinalSalary)],
           ['Expected Salary Growth', `${inputs.salaryGrowthRate}% per year`],
           ['Life Expectancy', `${inputs.lifeExpectancy}`],
@@ -1003,7 +1003,7 @@
         const VESTING_YEARS = 10;
         const MAX_BENEFIT_PERCENT = 80;
         const edicServiceYears = edicYears.length;
-        const currentCityServiceYears = edicYears.length;
+        const currentCityServiceYears = 0; // City service accrues from now forward; EDIC buyback added separately
         const edicSalaries = edicYears.map(y => y.salary);
         const projectSalary = (yearsFromNow) => expectedFinalSalary * Math.pow(1 + salaryGrowthRate / 100, yearsFromNow);
 
@@ -1015,14 +1015,28 @@
 
         for (let depAge = minDep; depAge <= maxDep; depAge++) {
           const yearsUntilDeparture = depAge - currentAge;
+          const collectionAge = Math.max(60, depAge);
+
           if (yearsUntilDeparture < 0) {
-            dataPoints.push({ depAge, withoutBB: 0, withBB: 0, collectionAge: 60, notVestedWithout: true, notVestedWith: true });
+            // Departure age is in the past — no city service, but EDIC buyback alone can qualify
+            const notVestedNoBB = true;
+            const notVestedBB = edicServiceYears < VESTING_YEARS;
+            
+            let annualWithBB = 0;
+            if (!notVestedBB && edicSalaries.length >= avgYears) {
+              const sorted = [...edicSalaries].sort((a, b) => b - a);
+              const avg = sorted.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears;
+              const basePercent = table[collectionAge] || 0;
+              const percent = Math.min(basePercent * edicServiceYears, MAX_BENEFIT_PERCENT);
+              annualWithBB = avg * (percent / 100);
+            }
+            
+            dataPoints.push({ depAge, withoutBB: 0, withBB: annualWithBB, collectionAge, notVestedWithout: true, notVestedWith: notVestedBB });
             continue;
           }
 
           const frozenService = currentCityServiceYears + yearsUntilDeparture;
           const serviceWithBB = frozenService + edicServiceYears;
-          const collectionAge = Math.max(60, depAge);
 
           // Vesting check
           const notVestedWithout = frozenService < VESTING_YEARS;
@@ -1039,7 +1053,7 @@
           const avgNoBB = (salariesNoBB.length >= avgYears && !notVestedWithout) 
             ? salariesNoBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears : 0;
 
-          // Highest 5-year avg WITH buyback (need >= 5 salary years)
+          // Highest 5-year avg WITH buyback (need >= 5 salary years from combined pool)
           const salariesWithBB = [...citySalaries, ...edicSalaries].sort((a, b) => b - a);
           const avgWithBB = (salariesWithBB.length >= avgYears && !notVestedWith)
             ? salariesWithBB.slice(0, avgYears).reduce((a, b) => a + b, 0) / avgYears : 0;
