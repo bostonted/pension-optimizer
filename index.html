@@ -532,7 +532,7 @@
           optimalWithoutBuyback: eligibleScenarios.filter(s => !s.notVestedWithout).sort((a, b) => b.lifetimeBenefitWithout - a.lifetimeBenefitWithout)[0],
           bestBuybackROI: eligibleScenarios.filter(s => !s.buybackWasted && !s.notVestedWith && s.roi > 0).sort((a, b) => b.roi - a.roi)[0],
           minRetirementAge, avgYears, edicServiceYears, VESTING_YEARS,
-          willDepart, departureAge: willDepart ? departureAge : null, frozenServiceYears, frozenAvgSalary,
+          willDepart, departureAge: willDepart ? departureAge : null, frozenServiceYears, frozenAvgSalary, frozenAvgSalaryWithBuyback,
           neverVestedWithout, neverVestedWith
         };
       }, [inputs, edicYears, buybackCalculation]);
@@ -636,7 +636,11 @@
           doc.text(`Early Departure at Age ${calculations.departureAge}`, margin + 6, y + 3);
           doc.setFontSize(9);
           doc.setTextColor(140, 110, 60);
-          doc.text(`Service freezes at ${calculations.frozenServiceYears?.toFixed(1)} years  •  Salary freezes at ${formatCurrency(calculations.frozenAvgSalary)} avg  •  Pension starts at age ${calculations.minRetirementAge}`, margin + 6, y + 9);
+          const totalService = (calculations.frozenServiceYears + calculations.edicServiceYears).toFixed(1);
+          const salaryStr = calculations.frozenAvgSalaryWithBuyback > 0 
+            ? formatCurrency(calculations.frozenAvgSalaryWithBuyback)
+            : '$0 (not enough salary years)';
+          doc.text(`Service freezes at ${totalService} yrs (${calculations.frozenServiceYears?.toFixed(1)} city + ${calculations.edicServiceYears} buyback)  •  Highest 5-yr avg: ${salaryStr}  •  Pension starts at age ${calculations.minRetirementAge}`, margin + 6, y + 9);
           y += 18;
         }
 
@@ -1089,38 +1093,41 @@
 
         // ===== CHART AREA =====
         const chartLeft = margin + 50;
-        const chartRight = pageWidth - margin - 20;
+        const chartRight = pageWidth - margin - 10;
         const chartTop = y + 5;
         const chartBottom = pageHeight - 70;
         const chartWidth = chartRight - chartLeft;
         const chartHeight = chartBottom - chartTop;
 
-        // Y-axis range
+        // Y-axis range with smart tick sizing
         const allValues = dataPoints.map(d => Math.max(d.withoutBB, d.withBB));
-        const yMax = Math.ceil(Math.max(...allValues) / 10000) * 10000;
+        const rawMax = Math.max(...allValues);
+        const yTickStep = rawMax > 100000 ? 20000 : rawMax > 50000 ? 10000 : rawMax > 20000 ? 5000 : 2000;
+        const yMax = Math.ceil(rawMax / yTickStep) * yTickStep;
         const yMin = 0;
         const yRange = yMax - yMin;
+        const yTicks = Math.round(yRange / yTickStep);
+
+        // Draw chart background
+        doc.setFillColor(248, 251, 255);
+        doc.rect(chartLeft, chartTop, chartWidth, chartHeight, 'F');
 
         // Draw axes
         doc.setDrawColor(80, 110, 140);
         doc.setLineWidth(0.5);
-        doc.line(chartLeft, chartTop, chartLeft, chartBottom);        // Y-axis
-        doc.line(chartLeft, chartBottom, chartRight, chartBottom);    // X-axis
+        doc.line(chartLeft, chartTop, chartLeft, chartBottom);
+        doc.line(chartLeft, chartBottom, chartRight, chartBottom);
 
         // Y-axis grid lines and labels
-        const yTicks = 6;
-        const yStep = yRange / yTicks;
-        doc.setFontSize(8);
+        doc.setFontSize(7.5);
         for (let i = 0; i <= yTicks; i++) {
-          const val = yMin + yStep * i;
+          const val = yMin + yTickStep * i;
           const yPos = chartBottom - (i / yTicks) * chartHeight;
           
-          // Grid line
-          doc.setDrawColor(200, 215, 230);
-          doc.setLineWidth(0.15);
+          doc.setDrawColor(210, 220, 235);
+          doc.setLineWidth(0.1);
           doc.line(chartLeft, yPos, chartRight, yPos);
           
-          // Label
           doc.setTextColor(100, 130, 160);
           const label = val >= 1000 ? `$${(val / 1000).toFixed(0)}K` : `$${val.toFixed(0)}`;
           doc.text(label, chartLeft - 4, yPos + 2, { align: 'right' });
@@ -1133,32 +1140,93 @@
 
         // X-axis labels
         const numPoints = maxDep - minDep;
-        doc.setFontSize(8);
+        doc.setFontSize(7.5);
         for (let depAge = minDep; depAge <= maxDep; depAge++) {
           const xPos = chartLeft + ((depAge - minDep) / numPoints) * chartWidth;
           
-          // Tick mark
           doc.setDrawColor(80, 110, 140);
           doc.setLineWidth(0.3);
           doc.line(xPos, chartBottom, xPos, chartBottom + 3);
           
-          // Label (every age, or every other if crowded)
           doc.setTextColor(100, 130, 160);
-          doc.text(`${depAge}`, xPos, chartBottom + 9, { align: 'center' });
+          doc.text(`${depAge}`, xPos, chartBottom + 8, { align: 'center' });
         }
 
         // X-axis title
         doc.setFontSize(10);
         doc.setTextColor(60, 90, 120);
-        doc.text('Departure Age', chartLeft + chartWidth / 2, chartBottom + 18, { align: 'center' });
+        doc.text('Departure Age', chartLeft + chartWidth / 2, chartBottom + 16, { align: 'center' });
 
         // Helper: convert data to chart coords
         const toX = (depAge) => chartLeft + ((depAge - minDep) / numPoints) * chartWidth;
         const toY = (val) => chartBottom - ((val - yMin) / yRange) * chartHeight;
 
-        // Draw "Without Buyback" line
+        // ===== VERTICAL REFERENCE LINES =====
+        // Current age marker
+        if (currentAge >= minDep && currentAge <= maxDep) {
+          const xCur = toX(currentAge);
+          doc.setDrawColor(180, 140, 60);
+          doc.setLineWidth(0.4);
+          doc.setLineDashPattern([2, 2], 0);
+          doc.line(xCur, chartTop, xCur, chartBottom);
+          doc.setLineDashPattern([], 0);
+          doc.setFontSize(7);
+          doc.setTextColor(180, 140, 60);
+          doc.text(`Now (${currentAge})`, xCur + 2, chartTop + 6);
+        }
+
+        // Age 60 retirement threshold
+        if (60 >= minDep && 60 <= maxDep) {
+          const x60 = toX(60);
+          doc.setDrawColor(160, 100, 100);
+          doc.setLineWidth(0.4);
+          doc.setLineDashPattern([2, 2], 0);
+          doc.line(x60, chartTop, x60, chartBottom);
+          doc.setLineDashPattern([], 0);
+          doc.setFontSize(7);
+          doc.setTextColor(160, 100, 100);
+          doc.text('Earliest collection (60)', x60 + 2, chartTop + 6);
+        }
+
+        // Vesting threshold line (where service + buyback hits 10)
+        const vestingDepAge = Math.ceil(currentAge + Math.max(0, VESTING_YEARS - edicServiceYears));
+        if (vestingDepAge > currentAge && vestingDepAge >= minDep && vestingDepAge <= maxDep) {
+          const xVest = toX(vestingDepAge);
+          doc.setDrawColor(100, 160, 100);
+          doc.setLineWidth(0.4);
+          doc.setLineDashPattern([2, 2], 0);
+          doc.line(xVest, chartTop, xVest, chartBottom);
+          doc.setLineDashPattern([], 0);
+          doc.setFontSize(7);
+          doc.setTextColor(100, 160, 100);
+          doc.text(`Vested w/ BB (${vestingDepAge})`, xVest + 2, chartTop + 12);
+        }
+
+        // ===== SHADED AREA between the two lines (buyback benefit) =====
+        if (edicServiceYears > 0) {
+          const validPoints = dataPoints.filter(d => d.withBB > 0 && d.withoutBB >= 0);
+          if (validPoints.length > 1) {
+            doc.setFillColor(60, 190, 100, 0.08);
+            // Build polygon path: top edge (withBB) forward, then bottom edge (withoutBB) backward
+            const polyX = [];
+            const polyY = [];
+            validPoints.forEach(d => { polyX.push(toX(d.depAge)); polyY.push(toY(d.withBB)); });
+            [...validPoints].reverse().forEach(d => { polyX.push(toX(d.depAge)); polyY.push(toY(Math.max(d.withoutBB, 0))); });
+            
+            // Draw filled polygon manually using triangle fan
+            doc.setFillColor(60, 190, 100);
+            doc.setGState(new doc.GState({ opacity: 0.12 }));
+            for (let i = 1; i < polyX.length - 1; i++) {
+              doc.triangle(polyX[0], polyY[0], polyX[i], polyY[i], polyX[i + 1], polyY[i + 1], 'F');
+            }
+            doc.setGState(new doc.GState({ opacity: 1.0 }));
+          }
+        }
+
+        // ===== DRAW LINES =====
+        // Without Buyback line
         doc.setDrawColor(100, 160, 210);
-        doc.setLineWidth(1.2);
+        doc.setLineWidth(1.4);
         for (let i = 1; i < dataPoints.length; i++) {
           const p0 = dataPoints[i - 1];
           const p1 = dataPoints[i];
@@ -1167,18 +1235,10 @@
           }
         }
 
-        // Draw dots for Without Buyback
-        dataPoints.forEach(d => {
-          if (d.withoutBB > 0) {
-            doc.setFillColor(100, 160, 210);
-            doc.circle(toX(d.depAge), toY(d.withoutBB), 1.5, 'F');
-          }
-        });
-
-        // Draw "With Buyback" line
+        // With Buyback line
         if (edicServiceYears > 0) {
           doc.setDrawColor(60, 190, 100);
-          doc.setLineWidth(1.2);
+          doc.setLineWidth(1.4);
           for (let i = 1; i < dataPoints.length; i++) {
             const p0 = dataPoints[i - 1];
             const p1 = dataPoints[i];
@@ -1186,40 +1246,119 @@
               doc.line(toX(p0.depAge), toY(p0.withBB), toX(p1.depAge), toY(p1.withBB));
             }
           }
-
-          // Draw dots for With Buyback
-          dataPoints.forEach(d => {
-            if (d.withBB > 0) {
-              doc.setFillColor(60, 190, 100);
-              doc.circle(toX(d.depAge), toY(d.withBB), 1.5, 'F');
-            }
-          });
         }
 
-        // ===== LEGEND (below chart) =====
-        const legendX = chartLeft + chartWidth / 2 - (edicServiceYears > 0 ? 75 : 40);
-        const legendY = chartBottom + 24;
+        // ===== DATA POINTS WITH VALUE LABELS =====
+        const fmtShort = (v) => v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${v.toFixed(0)}`;
+        
+        // Decide label frequency: every point if <= 10 points visible, else every other
+        const visiblePoints = dataPoints.filter(d => d.depAge >= currentAge);
+        const labelEvery = visiblePoints.length > 12 ? 3 : visiblePoints.length > 8 ? 2 : 1;
 
-        // Without Buyback legend
+        // Without Buyback dots + labels
+        dataPoints.forEach((d, idx) => {
+          if (d.withoutBB > 0) {
+            doc.setFillColor(100, 160, 210);
+            doc.circle(toX(d.depAge), toY(d.withoutBB), 1.8, 'F');
+            doc.setFillColor(255, 255, 255);
+            doc.circle(toX(d.depAge), toY(d.withoutBB), 0.8, 'F');
+            
+            if (idx % labelEvery === 0 || d.depAge === maxDep) {
+              doc.setFontSize(6.5);
+              doc.setTextColor(70, 130, 180);
+              doc.text(fmtShort(d.withoutBB), toX(d.depAge), toY(d.withoutBB) + 6, { align: 'center' });
+            }
+          }
+        });
+
+        // With Buyback dots + labels
+        if (edicServiceYears > 0) {
+          dataPoints.forEach((d, idx) => {
+            if (d.withBB > 0) {
+              doc.setFillColor(60, 190, 100);
+              doc.circle(toX(d.depAge), toY(d.withBB), 1.8, 'F');
+              doc.setFillColor(255, 255, 255);
+              doc.circle(toX(d.depAge), toY(d.withBB), 0.8, 'F');
+              
+              if (idx % labelEvery === 0 || d.depAge === maxDep) {
+                doc.setFontSize(6.5);
+                doc.setTextColor(40, 150, 70);
+                doc.text(fmtShort(d.withBB), toX(d.depAge), toY(d.withBB) - 4, { align: 'center' });
+              }
+            }
+          });
+
+          // Buyback benefit annotation at the rightmost point
+          const last = dataPoints[dataPoints.length - 1];
+          if (last.withBB > 0 && last.withoutBB >= 0) {
+            const diff = last.withBB - last.withoutBB;
+            if (diff > 0) {
+              const midY = (toY(last.withBB) + toY(last.withoutBB)) / 2;
+              doc.setDrawColor(60, 190, 100);
+              doc.setLineWidth(0.3);
+              doc.setLineDashPattern([1, 1], 0);
+              doc.line(toX(last.depAge) + 4, toY(last.withBB), toX(last.depAge) + 4, toY(last.withoutBB));
+              doc.setLineDashPattern([], 0);
+              // Arrow heads
+              doc.setFillColor(60, 190, 100);
+              doc.triangle(toX(last.depAge) + 4, toY(last.withBB), toX(last.depAge) + 2.5, toY(last.withBB) + 2.5, toX(last.depAge) + 5.5, toY(last.withBB) + 2.5, 'F');
+              doc.triangle(toX(last.depAge) + 4, toY(last.withoutBB), toX(last.depAge) + 2.5, toY(last.withoutBB) - 2.5, toX(last.depAge) + 5.5, toY(last.withoutBB) - 2.5, 'F');
+              
+              doc.setFontSize(7);
+              doc.setTextColor(40, 150, 70);
+              doc.text(`+${fmtShort(diff)}/yr`, toX(last.depAge) + 8, midY + 2);
+              doc.text('buyback benefit', toX(last.depAge) + 8, midY + 7);
+            }
+          }
+        }
+
+        // ===== SERVICE YEAR ANNOTATIONS along bottom =====
+        doc.setFontSize(6);
+        doc.setTextColor(150, 150, 150);
+        dataPoints.forEach((d, idx) => {
+          if (d.depAge >= currentAge && (idx % labelEvery === 0 || d.depAge === maxDep)) {
+            const yearsFromNow = d.depAge - currentAge;
+            const svc = yearsFromNow + edicServiceYears;
+            doc.text(`${svc}yr`, toX(d.depAge), chartBottom + 13, { align: 'center' });
+          }
+        });
+        doc.setFontSize(6);
+        doc.setTextColor(170, 170, 170);
+        doc.text('(total service w/ buyback)', chartLeft + chartWidth / 2, chartBottom + 18, { align: 'center' });
+
+        // ===== LEGEND =====
+        const legendY = chartBottom + 22;
+        const legendCenterX = chartLeft + chartWidth / 2;
+
+        // Without Buyback
+        const leg1X = legendCenterX - (edicServiceYears > 0 ? 95 : 45);
         doc.setDrawColor(100, 160, 210);
         doc.setLineWidth(1.5);
-        doc.line(legendX, legendY, legendX + 12, legendY);
+        doc.line(leg1X, legendY, leg1X + 12, legendY);
         doc.setFillColor(100, 160, 210);
-        doc.circle(legendX + 6, legendY, 1.2, 'F');
+        doc.circle(leg1X + 6, legendY, 1.2, 'F');
         doc.setFontSize(8);
         doc.setTextColor(60, 90, 120);
-        doc.text('Without Buyback', legendX + 16, legendY + 2.5);
+        doc.text('Without Buyback', leg1X + 16, legendY + 2.5);
 
-        // With Buyback legend
+        // With Buyback
         if (edicServiceYears > 0) {
-          const bbLegendX = legendX + 90;
+          const leg2X = legendCenterX + 10;
           doc.setDrawColor(60, 190, 100);
           doc.setLineWidth(1.5);
-          doc.line(bbLegendX, legendY, bbLegendX + 12, legendY);
+          doc.line(leg2X, legendY, leg2X + 12, legendY);
           doc.setFillColor(60, 190, 100);
-          doc.circle(bbLegendX + 6, legendY, 1.2, 'F');
+          doc.circle(leg2X + 6, legendY, 1.2, 'F');
           doc.setTextColor(60, 90, 120);
-          doc.text('With Buyback', bbLegendX + 16, legendY + 2.5);
+          doc.text('With Buyback', leg2X + 16, legendY + 2.5);
+
+          // Shaded area legend
+          doc.setFillColor(60, 190, 100);
+          doc.setGState(new doc.GState({ opacity: 0.12 }));
+          doc.rect(leg2X + 80, legendY - 3, 12, 6, 'F');
+          doc.setGState(new doc.GState({ opacity: 1.0 }));
+          doc.setTextColor(60, 90, 120);
+          doc.text('Buyback Benefit', leg2X + 96, legendY + 2.5);
         }
 
         // ===== DATA TABLE ON PAGE 2 =====
@@ -1709,8 +1848,11 @@
                   <div>
                     <div style={{ color: '#e0c080', fontWeight: '600', marginBottom: '4px' }}>Early Departure at Age {calculations.departureAge}</div>
                     <div style={{ color: '#b0a080', fontSize: '13px' }}>
-                      Service freezes at {calculations.frozenServiceYears?.toFixed(1)} years • 
-                      Salary freezes at {formatCurrency(calculations.frozenAvgSalary)} avg • 
+                      Service freezes at {(calculations.frozenServiceYears + calculations.edicServiceYears).toFixed(1)} years
+                      ({calculations.frozenServiceYears?.toFixed(1)} city + {calculations.edicServiceYears} buyback) • 
+                      Highest 5-yr avg salary: {calculations.frozenAvgSalaryWithBuyback > 0 
+                        ? formatCurrency(calculations.frozenAvgSalaryWithBuyback)
+                        : '$0 (not enough salary years)'} • 
                       Pension starts at age {calculations.minRetirementAge}
                     </div>
                   </div>
